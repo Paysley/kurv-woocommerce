@@ -1,0 +1,27 @@
+= 1.0.0 — 2026-04-01 =
+* Initial release of Kurv Payments for WooCommerce.
+* Full rebrand from Paysley; all references updated.
+* PHP 8.1 minimum requirement; strict types and typed properties throughout.
+* WooCommerce 8.0+ minimum; all deprecated WC function calls updated (new WC_Order, WC_Logger, magic property access).
+* Fixed: $this->supports declaration was being overwritten — refunds support now correctly declared alongside products.
+* Fixed: process_payment() exception handling — unhandled exceptions no longer crash the checkout page.
+* Fixed: $order->save() added after all update_meta_data() calls so meta persists correctly.
+* Fixed: woocommerce_thankyou_{gateway_id} hook replaces woocommerce_before_thankyou (previously fired on every order's thank-you page).
+* Fixed: add_post_meta() replaced with update_post_meta() for product sync (prevented duplicate meta rows on repeated saves).
+* Fixed: Content-Type header corrected to 'application/json' (was incorrectly cased as 'Application/json').
+* Fixed: wp_hash() replaces md5() for payment token generation (uses WordPress secret key via HMAC-SHA256).
+* Fixed: is_wp_error() checks added on all Kurv API calls to handle network failures gracefully.
+* Fixed: URL injection in category and customer search queries — rawurlencode() + add_query_arg() used throughout.
+* Fixed: WooCommerce Blocks integration $name mismatch (was 'Paysley', must match gateway id 'kurv') — blocks checkout was silently non-functional.
+* Fixed: wp_set_script_translations() corrected to use proper script handle and languages path.
+* Fixed: time() cache-busting on block script replaced with plugin version constant.
+* Fixed: process_full_refund now listens to woocommerce_order_status_changed (3 params) instead of deprecated woocommerce_order_edit_status (2 params).
+* Improved: Explicit Test Mode toggle added to settings — replaces brittle API key prefix detection ('py_live').
+* Improved: Separate Live API Key and Test API Key fields; settings validation checks the active key based on current mode.
+* Improved: Full refund failure now writes a clear order note instead of an unreliable admin meta box redirect.
+* Improved: HPOS (custom_order_tables) compatibility declared for WooCommerce 8.x+.
+* Improved: Dead code removed — getProductTax() (defined but never called), get_order_prop() (WC 2.x shim no longer needed), global $woocommerce (unused).
+* Improved: Typos fixed in order notes and meta values ("successfull" → "successful", "succes" → "success").
+* Improved: check_and_create_product_category() consolidated — 'No Category' fallback replaced with translatable 'Uncategorised'.
+* Improved: Plugin header now declares Requires at least, Requires PHP, WC requires at least, and WC tested up to.
+* Added: index.php silence file preserved in all directories.
