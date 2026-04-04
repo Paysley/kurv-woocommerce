@@ -2,135 +2,217 @@
    Kurv Checkout Overlay
    ========================================================================== */
 
+:root {
+    --kurv-green: #22A276;
+    --kurv-overlay-bg: rgba(0, 0, 0, 0.82);
+    --kurv-card-bg: #ffffff;
+    --kurv-radius: 24px;
+    --kurv-shadow: 0 32px 80px rgba(0, 0, 0, 0.28), 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
 #kurv-payment-overlay {
-	display:          none;
-	position:         fixed;
-	inset:            0;
-	z-index:          999999;
-	background:       rgba(0, 0, 0, 0.78);
-	align-items:      center;
-	justify-content:  center;
-	backdrop-filter:  blur(3px);
-	-webkit-backdrop-filter: blur(3px);
-	animation:        kurv-backdrop-in 0.25s ease;
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    background: var(--kurv-overlay-bg);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    align-items: center;
+    justify-content: center;
+    animation: kurv-fade-in 0.25s ease forwards;
 }
 
-#kurv-payment-overlay.kurv-overlay-visible {
-	display: flex;
+#kurv-payment-overlay.kurv-visible {
+    display: flex;
 }
 
-/* Card */
+@keyframes kurv-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
 .kurv-overlay-card {
-	background:    #ffffff;
-	border-radius: 16px;
-	padding:       44px 52px;
-	text-align:    center;
-	box-shadow:    0 24px 64px rgba(0, 0, 0, 0.32);
-	max-width:     360px;
-	width:         90%;
-	animation:     kurv-card-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    background: var(--kurv-card-bg);
+    border-radius: var(--kurv-radius);
+    box-shadow: var(--kurv-shadow);
+    padding: 40px 48px 36px;
+    text-align: center;
+    max-width: 380px;
+    width: 90%;
+    animation: kurv-card-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes kurv-card-in {
+    from { opacity: 0; transform: translateY(24px) scale(0.95); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* Logo */
 .kurv-overlay-logo {
-	height:        48px;
-	width:         auto;
-	margin-bottom: 28px;
-	display:       block;
-	margin-left:   auto;
-	margin-right:  auto;
+    width: 104px;
+    height: 104px;
+    object-fit: contain;
+    margin: 0 auto 20px;
+    display: block;
+}
+
+/* Payment icons row */
+.kurv-payment-icons {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    margin-bottom: 24px;
+    flex-wrap: nowrap;
+}
+
+.kurv-payment-icons svg {
+    width: 40px;
+    height: 26px;
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+    flex-shrink: 0;
+    display: block;
 }
 
 /* Spinner */
 .kurv-spinner {
-	width:   52px;
-	height:  52px;
-	margin:  0 auto 24px;
+    width: 36px;
+    height: 36px;
+    margin: 0 auto 14px;
+    position: relative;
 }
 
-.kurv-spinner svg {
-	width:    100%;
-	height:   100%;
-	animation: kurv-rotate 0.9s linear infinite;
+.kurv-spinner::before,
+.kurv-spinner::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
 }
 
-.kurv-spinner svg circle {
-	stroke:           #2DB36A; /* Kurv bright green — matches logo icon gradient */
-	stroke-linecap:   round;
-	stroke-dasharray: 80, 200;
-	stroke-dashoffset: 0;
-	animation:        kurv-dash 1.4s ease-in-out infinite;
+.kurv-spinner::before {
+    border: 2.5px solid rgba(34, 162, 118, 0.15);
 }
 
-/* Text */
-.kurv-overlay-text {
-	font-size:   15px;
-	font-weight: 500;
-	color:       #2c2c2c;
-	margin:      0;
-	line-height: 1.5;
-	animation:   kurv-pulse 2s ease-in-out infinite;
+.kurv-spinner::after {
+    border: 2.5px solid transparent;
+    border-top-color: var(--kurv-green);
+    border-right-color: var(--kurv-green);
+    animation: kurv-spin 0.75s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
+}
+
+@keyframes kurv-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Rotating message */
+.kurv-overlay-message {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 14px;
+    font-style: italic;
+    font-weight: 400;
+    color: var(--kurv-green);
+    margin: 0 0 4px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.55;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.kurv-overlay-message.kurv-msg-fade-out {
+    opacity: 0;
+    transform: translateY(-5px);
+}
+
+.kurv-overlay-message.kurv-msg-fade-in {
+    opacity: 0;
+    transform: translateY(5px);
+}
+
+/* Secure badge */
+.kurv-secure-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 16px;
+    padding: 5px 12px;
+    background: #f6f6f6;
+    border-radius: 100px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 11px;
+    color: #999;
+    letter-spacing: 0.1px;
+}
+
+.kurv-secure-badge svg {
+    width: 11px;
+    height: 11px;
+    fill: var(--kurv-green);
+    flex-shrink: 0;
 }
 
 /* Error state */
-#kurv-payment-overlay.kurv-overlay-error .kurv-spinner {
-	display: none;
+#kurv-payment-overlay.kurv-error .kurv-spinner { display: none; }
+#kurv-payment-overlay.kurv-error .kurv-overlay-message { color: #c0392b; }
+#kurv-payment-overlay.kurv-error .kurv-secure-badge { display: none; }
+#kurv-payment-overlay.kurv-error .kurv-payment-icons { opacity: 0.35; }
+
+.kurv-error-icon {
+    display: none;
+    width: 44px;
+    height: 44px;
+    margin: 0 auto 14px;
+    background: #fdecea;
+    border-radius: 50%;
+    align-items: center;
+    justify-content: center;
 }
 
-#kurv-payment-overlay.kurv-overlay-error .kurv-overlay-text {
-	color:     #c0392b;
-	animation: none;
-	font-size: 14px;
+.kurv-error-icon svg {
+    width: 20px;
+    height: 20px;
+    stroke: #c0392b;
+    fill: none;
+    stroke-width: 2.5;
+    stroke-linecap: round;
 }
 
-#kurv-payment-overlay.kurv-overlay-error .kurv-overlay-card::before {
-	content:     '✕';
-	display:     block;
-	font-size:   32px;
-	color:       #c0392b;
-	margin-bottom: 12px;
+#kurv-payment-overlay.kurv-error .kurv-error-icon { display: flex; }
+
+.kurv-dismiss-bar {
+    display: none;
+    height: 3px;
+    background: #f0f0f0;
+    border-radius: 100px;
+    margin-top: 18px;
+    overflow: hidden;
 }
 
-/* ==========================================================================
-   Keyframes
-   ========================================================================== */
-
-@keyframes kurv-backdrop-in {
-	from { opacity: 0; }
-	to   { opacity: 1; }
+.kurv-dismiss-bar-fill {
+    height: 100%;
+    width: 100%;
+    background: #c0392b;
+    border-radius: 100px;
+    transform-origin: left;
+    animation: kurv-drain 3.5s linear forwards;
 }
 
-@keyframes kurv-card-in {
-	from {
-		opacity:   0;
-		transform: scale(0.88) translateY(16px);
-	}
-	to {
-		opacity:   1;
-		transform: scale(1) translateY(0);
-	}
+@keyframes kurv-drain {
+    from { transform: scaleX(1); }
+    to   { transform: scaleX(0); }
 }
 
-@keyframes kurv-rotate {
-	100% { transform: rotate(360deg); }
-}
+#kurv-payment-overlay.kurv-error .kurv-dismiss-bar { display: block; }
 
-@keyframes kurv-dash {
-	0% {
-		stroke-dasharray:  1, 200;
-		stroke-dashoffset: 0;
-	}
-	50% {
-		stroke-dasharray:  100, 200;
-		stroke-dashoffset: -30px;
-	}
-	100% {
-		stroke-dasharray:  100, 200;
-		stroke-dashoffset: -124px;
-	}
-}
-
-@keyframes kurv-pulse {
-	0%, 100% { opacity: 1; }
-	50%       { opacity: 0.55; }
+/* Checkout page icon size */
+.payment_method_kurv img,
+.payment_method_kurv svg {
+    height: 24px !important;
+    width: auto !important;
+    vertical-align: middle;
+    display: inline-block;
 }

@@ -1,119 +1,143 @@
-/* global kurv_checkout_params, jQuery */
-
 /**
  * Kurv Checkout Overlay
+ * Loading state with payment icons and rotating messages.
  */
-( function () {
-	'use strict';
+/* global kurv_checkout_params, jQuery */
+(function ($) {
+    'use strict';
 
-	var config = window.kurv_checkout_params || {};
+    /* -------------------------------------------------------------------------
+       Rotating messages
+    ------------------------------------------------------------------------- */
+    var messages = [
+        'Hang tight \u2014 building your secure payment page\u2026',
+        'We know you\u2019re in a hurry. Almost there\u2026',
+        'Connecting you to Kurv\u2026',
+        'Your payment page is being handcrafted\u2026'
+    ];
+    var msgIndex = 0;
+    var msgTimer = null;
 
-	/* ------------------------------------------------------------------
-	   DOM helpers
-	------------------------------------------------------------------ */
+    /* -------------------------------------------------------------------------
+       Payment method SVGs — Visa, Mastercard, Amex, Discover, Apple Pay, Google Pay
+    ------------------------------------------------------------------------- */
+    var paymentIcons = [
+        /* Visa */
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g><rect x="2" y="7" width="28" height="18" rx="3" ry="3" fill="#0f70ce" stroke-width="0"></rect><path d="m17.679,14.433h2.61l.502,1.148h1.78l-2.531-5.754h-2.039l-2.531,5.754h1.734l.477-1.148Zm1.307-3.135l.775,1.844h-1.535l.761-1.844Z" fill="#0f70ce" stroke-width="0"></path><path fill="#0f70ce" stroke-width="0" d="M22.542 9.827L25.018 9.827 26.302 13.39 27.604 9.827 30 9.827 30 15.581 28.45 15.581 28.45 11.603 26.977 15.581 25.608 15.581 24.124 11.631 24.124 15.581 22.542 15.581 22.542 9.827z"></path><path fill="#fff" stroke-width="0" d="M17.679 14.433H20.289L20.791 15.581 22.571 15.581 20.04 9.827 18.001 9.827 15.47 15.581 17.204 15.581 17.679 14.433z"></path><path fill="#fff" stroke-width="0" d="M22.542 9.827L25.018 9.827 26.302 13.39 27.604 9.827 30 9.827 30 15.581 28.45 15.581 28.45 11.603 26.977 15.581 25.608 15.581 24.124 11.631 24.124 15.581 22.542 15.581 22.542 9.827z"></path><path fill="#fff" stroke-width="0" d="M19.24 20.82L19.24 19.944 22.484 19.944 22.484 18.624 19.24 18.624 19.24 17.748 22.565 17.748 22.565 16.409 17.664 16.409 17.664 22.173 22.565 22.173 22.565 20.82 19.24 20.82z"></path><path fill="#fff" stroke-width="0" d="M24.638 16.409L26.271 18.234 27.968 16.409 30 16.409 27.283 19.254 30 22.173 27.939 22.173 26.249 20.309 24.567 22.173 22.537 22.173 25.272 19.275 22.537 16.409 24.638 16.409z"></path><path d="m27,7H5c-1.657,0-3,1.343-3,3v12c0,1.657,1.343,3,3,3h22c1.657,0,3-1.343,3-3v-12c0-1.657-1.343-3-3-3Zm2,15c0,1.103-.897,2-2,2H5c-1.103,0-2-.897-2-2v-12c0-1.103.897-2,2-2h22c1.103,0,2,.897,2,2v12Z" stroke-width="0" opacity=".15"></path></g></svg>',
 
-	function getOverlay() {
-		return document.getElementById( 'kurv-payment-overlay' );
-	}
+        /* Mastercard */
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g><rect x="2" y="7" width="28" height="18" rx="3" ry="3" fill="#fff" stroke-width="0"></rect><path d="m27,7H5c-1.657,0-3,1.343-3,3v12c0,1.657,1.343,3,3,3h22c1.657,0,3-1.343,3-3v-12c0-1.657-1.343-3-3-3Zm2,15c0,1.103-.897,2-2,2H5c-1.103,0-2-.897-2-2v-12c0-1.103.897-2,2-2h22c1.103,0,2,.897,2,2v12Z" stroke-width="0" opacity=".15"></path><path fill="#ff5f00" stroke-width="0" d="M13.597 11.677H18.407V20.32H13.597z"></path><path d="m13.902,15.999c0-1.68.779-3.283,2.092-4.322-2.382-1.878-5.849-1.466-7.727.932-1.863,2.382-1.451,5.833.947,7.712,2,1.573,4.795,1.573,6.795,0-1.329-1.038-2.107-2.642-2.107-4.322Z" fill="#eb001b" stroke-width="0"></path><path d="m24.897,15.999c0,3.039-2.459,5.497-5.497,5.497-1.237,0-2.428-.412-3.39-1.176,2.382-1.878,2.795-5.329.916-7.727-.275-.336-.58-.657-.916-.916,2.382-1.878,5.849-1.466,7.712.932.764.962,1.176,2.153,1.176,3.39Z" fill="#f79e1b" stroke-width="0"></path></g></svg>',
 
-	function buildOverlay() {
-		var overlay = document.createElement( 'div' );
-		overlay.id  = 'kurv-payment-overlay';
+        /* Amex */
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g><rect x="2" y="7" width="28" height="18" rx="3" ry="3" fill="#fff" stroke-width="0"></rect><path d="m27,7H5c-1.657,0-3,1.343-3,3v12c0,1.657,1.343,3,3,3h22c1.657,0,3-1.343,3-3v-12c0-1.657-1.343-3-3-3Zm2,15c0,1.103-.897,2-2,2H5c-1.103,0-2-.897-2-2v-12c0-1.103.897-2,2-2h22c1.103,0,2,.897,2,2v12Z" stroke-width="0" opacity=".15"></path><path d="m13.392,12.624l-2.838,6.77h-1.851l-1.397-5.403c-.085-.332-.158-.454-.416-.595-.421-.229-1.117-.443-1.728-.576l.041-.196h2.98c.38,0,.721.253.808.69l.738,3.918,1.822-4.608h1.84Z" fill="#1434cb" stroke-width="0"></path><path d="m20.646,17.183c.008-1.787-2.47-1.886-2.453-2.684.005-.243.237-.501.743-.567.251-.032.943-.058,1.727.303l.307-1.436c-.421-.152-.964-.299-1.638-.299-1.732,0-2.95.92-2.959,2.238-.011.975.87,1.518,1.533,1.843.683.332.912.545.909.841-.005.454-.545.655-1.047.663-.881.014-1.392-.238-1.799-.428l-.318,1.484c.41.188,1.165.351,1.947.359,1.841,0,3.044-.909,3.05-2.317" fill="#1434cb" stroke-width="0"></path><path d="m25.423,12.624h-1.494c-.337,0-.62.195-.746.496l-2.628,6.274h1.839l.365-1.011h2.247l.212,1.011h1.62l-1.415-6.77Zm-2.16,4.372l.922-2.542.53,2.542h-1.452Z" fill="#1434cb" stroke-width="0"></path><path fill="#1434cb" stroke-width="0" d="M15.894 12.624L14.446 19.394 12.695 19.394 14.143 12.624 15.894 12.624z"></path></g></svg>',
 
-		overlay.innerHTML =
-			'<div class="kurv-overlay-card">' +
-				'<img src="' + escAttr( config.logoUrl ) + '" alt="Kurv" class="kurv-overlay-logo" />' +
-				'<div class="kurv-spinner">' +
-					'<svg viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg">' +
-						'<circle cx="25" cy="25" r="20" fill="none" stroke-width="4" />' +
-					'</svg>' +
-				'</div>' +
-				'<p class="kurv-overlay-text">' + escHtml( config.preparingText ) + '</p>' +
-			'</div>';
+        /* Discover */
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g><rect x="2" y="7" width="28" height="18" rx="3" ry="3" fill="#fff" stroke-width="0"></rect><path d="m27,7h-8c4.971,0,9,4.029,9,9s-4.029,9-9,9h8c1.657,0,3-1.343,3-3v-12c0-1.657-1.343-3-3-3Z" fill="#f47922" stroke-width="0"></path><path d="m27,7H5c-1.657,0-3,1.343-3,3v12c0,1.657,1.343,3,3,3h22c1.657,0,3-1.343,3-3v-12c0-1.657-1.343-3-3-3Zm2,15c0,1.103-.897,2-2,2H5c-1.103,0-2-.897-2-2v-12c0-1.103.897-2,2-2h22c1.103,0,2,.897,2,2v12Z" stroke-width="0" opacity=".15"></path><path d="m5.081,14.116h-1.081v3.777h1.076c.572,0,.985-.135,1.348-.436.431-.357.686-.894.686-1.45,0-1.115-.833-1.891-2.027-1.891Z" fill="#231f20" stroke-width="0"></path><path fill="#231f20" stroke-width="0" d="M7.448 14.116H8.185V17.893H7.448z"></path><path d="m9.986,15.565c-.442-.164-.572-.271-.572-.475,0-.238.231-.419.549-.419.221,0,.402.091.594.306l.386-.505c-.317-.277-.696-.419-1.11-.419-.668,0-1.178.464-1.178,1.082,0,.52.237.787.929,1.036.288.102.435.17.509.215.147.096.221.232.221.391,0,.306-.243.533-.572.533-.351,0-.634-.175-.804-.504l-.476.458c.339.498.747.719,1.308.719.766,0,1.303-.509,1.303-1.24,0-.6-.248-.872-1.086-1.178Z" fill="#231f20" stroke-width="0"></path><path d="m11.305,16.007c0,1.11.872,1.971,1.994,1.971.317,0,.589-.062.924-.22v-.867c-.295.295-.555.414-.889.414-.742,0-1.269-.538-1.269-1.303,0-.725.543-1.297,1.234-1.297.351,0,.617.125.924.425v-.867c-.323-.164-.589-.232-.906-.232-1.116,0-2.011.878-2.011,1.976Z" fill="#231f20" stroke-width="0"></path><path fill="#231f20" stroke-width="0" d="M20.063 16.653L19.056 14.116 18.251 14.116 19.854 17.99 20.25 17.99 21.882 14.116 21.083 14.116 20.063 16.653z"></path><path fill="#231f20" stroke-width="0" d="M22.215 17.893L24.304 17.893 24.304 17.253 22.951 17.253 22.951 16.234 24.254 16.234 24.254 15.594 22.951 15.594 22.951 14.756 24.304 14.756 24.304 14.116 22.215 14.116 22.215 17.893z"></path><path d="m27.221,15.231c0-.707-.487-1.115-1.337-1.115h-1.092v3.777h.736v-1.517h.096l1.02,1.517h.906l-1.189-1.591c.555-.113.861-.492.861-1.071Zm-1.478.624h-.216v-1.144h.227c.459,0,.708.192.708.56,0,.38-.249.584-.72.584Z" fill="#231f20" stroke-width="0"></path><path d="m18.461,16c0,1.105-.895,2-2,2s-2-.895-2-2,.895-2,2-2,2,.895,2,2Z" fill="#f47922" stroke-width="0"></path></g></svg>',
 
-		document.body.appendChild( overlay );
-		return overlay;
-	}
+        /* Apple Pay */
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g><rect x="2" y="7" width="28" height="18" rx="3" ry="3" fill="#e6e6e6" stroke-width="0"></rect><g opacity=".15"><path d="m27,7H5c-1.6569,0-3,1.3431-3,3v12c0,1.6569,1.3431,3,3,3h22c1.6569,0,3-1.3431,3-3v-12c0-1.6569-1.3431-3-3-3Zm2,15c0,1.103-.897,2-2,2H5c-1.103,0-2-.897-2-2v-12c0-1.103.897-2,2-2h22c1.103,0,2,.897,2,2v12Z" stroke-width="0"></path></g><path d="m8.8469,12.8798c.2708-.3387.4545-.7935.4061-1.2582-.3964.0197-.8801.2615-1.1602.6005-.2515.2903-.474.7641-.416,1.2093.445.0386.8895-.2224,1.1701-.5516" fill="#1a1a1a" stroke-width="0"></path><path d="m9.2479,13.5184c-.6462-.0385-1.1956.3668-1.5042.3668-.3088,0-.7813-.3474-1.2924-.338-.6652.0098-1.2825.3859-1.6201.9841-.6944,1.1968-.1832,2.972.492,3.9467.3279.4822.7231,1.0132,1.2438.9941.492-.0193.6848-.3186,1.2828-.3186.5976,0,.7713.3186,1.2921.3089.5401-.0097.8777-.4825,1.2056-.9651.3762-.5497.5302-1.0805.5398-1.1096-.0097-.0097-1.0414-.4055-1.051-1.5923-.0097-.9937.81-1.4664.8486-1.4957-.4629-.6847-1.1863-.7619-1.437-.7813" fill="#1a1a1a" stroke-width="0"></path><path d="m14.8746,12.1735c1.4045,0,2.3825.9681,2.3825,2.3777,0,1.4146-.9981,2.3878-2.4178,2.3878h-1.5551v2.473h-1.1235v-7.2385h2.7138Zm-1.5903,3.8224h1.2892c.9782,0,1.535-.5266,1.535-1.4396s-.5567-1.4346-1.5299-1.4346h-1.2942v2.8743Z" fill="#1a1a1a" stroke-width="0"></path><path d="m17.5507,17.9121c0-.9231.7073-1.4899,1.9615-1.5601l1.4446-.0852v-.4063c0-.5869-.3963-.9381-1.0583-.9381-.6272,0-1.0185.3009-1.1137.7725h-1.0233c.0602-.9532.8727-1.6554,2.177-1.6554,1.2791,0,2.0967.6772,2.0967,1.7356v3.6368h-1.0384v-.8678h-.025c-.3059.5869-.9732.9581-1.6654.9581-1.0334,0-1.7557-.6421-1.7557-1.5901Zm3.406-.4765v-.4163l-1.2993.0802c-.6471.0452-1.0132.3311-1.0132.7826,0,.4614.3812.7624.9631.7624.7574,0,1.3494-.5217,1.3494-1.2089Z" fill="#1a1a1a" stroke-width="0"></path><path d="m23.0155,21.3533v-.8779c.0801.02.2607.02.351.02.5016,0,.7725-.2106.938-.7524,0-.0101.0954-.321.0954-.3261l-1.9061-5.2821h1.1737l1.3345,4.294h.0199l1.3345-4.294h1.1437l-1.9765,5.553c-.4513,1.2792-.973,1.6905-2.0665,1.6905-.0904,0-.3613-.0101-.4414-.0251Z" fill="#1a1a1a" stroke-width="0"></path></g></svg>',
 
-	function escAttr( str ) {
-		return String( str || '' )
-			.replace( /&/g, '&amp;' )
-			.replace( /"/g, '&quot;' )
-			.replace( /</g, '&lt;' )
-			.replace( />/g, '&gt;' );
-	}
+        /* Google Pay */
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g><rect x="2" y="7" width="28" height="18" rx="3" ry="3" fill="#fff" stroke-width="0"></rect><g opacity=".15"><path d="m27,7H5c-1.6569,0-3,1.3431-3,3v12c0,1.6569,1.3431,3,3,3h22c1.6569,0,3-1.3431,3-3v-12c0-1.6569-1.3431-3-3-3Zm2,15c0,1.103-.897,2-2,2H5c-1.103,0-2-.897-2-2v-12c0-1.103.897-2,2-2h22c1.103,0,2,.897,2,2v12Z" stroke-width="0"></path></g><path d="m14.8969,16.1308v2.7891h-.8997v-6.8978h2.3393c.5698,0,1.1097.2099,1.5295.5998.4199.3599.6298.8997.6298,1.4695s-.2099,1.0797-.6298,1.4695c-.4199.3899-.9297.5998-1.5295.5998l-1.4395-.03h0Zm0-3.269v2.3992h1.4995c.3299,0,.6598-.12.8697-.3599.4798-.4499.4798-1.1996.03-1.6495l-.03-.03c-.2399-.2399-.5398-.3899-.8697-.3599h-1.4995Z" fill="#5f6368" stroke-width="0"></path><path d="m20.5651,14.0615c.6598,0,1.1696.1799,1.5595.5398s.5698.8397.5698,1.4396v2.8791h-.8397v-.6598h-.03c-.3599.5398-.8697.8097-1.4695.8097-.5098,0-.9597-.15-1.3196-.4499-.3299-.2999-.5398-.7198-.5398-1.1696,0-.4799.1799-.8697.5398-1.1696s.8697-.4199,1.4695-.4199c.5398,0,.9597.09,1.2896.2999v-.2099c0-.2999-.12-.5998-.3599-.7798-.2399-.2099-.5398-.3299-.8697-.3299-.5098,0-.8997.2099-1.1696.6298l-.7798-.4799c.4799-.6298,1.1097-.9297,1.9494-.9297Zm-1.1396,3.4189c0,.2399.12.4499.2999.5698.2099.15.4499.2399.6898.2399.3599,0,.7198-.15.9897-.4199.2999-.2699.4499-.5998.4499-.9597-.2699-.2099-.6598-.3299-1.1696-.3299-.3599,0-.6598.09-.8997.2699-.2399.15-.3599.3599-.3599.6298Z" fill="#5f6368" stroke-width="0"></path><path d="m27.5529,14.2114l-2.9691,6.8079h-.8997l1.1097-2.3693-1.9494-4.4086h.9597l1.4096,3.3889h.03l1.3796-3.3889h.9297v-.03Z" fill="#5f6368" stroke-width="0"></path><path d="m12.2324,15.531c0-.2699-.03-.5398-.06-.8097h-3.7488v1.5295h2.1293c-.09.4799-.3599.9297-.7798,1.1996v.9897h1.2896c.7498-.6898,1.1696-1.7095,1.1696-2.9091Z" fill="#4285f4" stroke-width="0"></path><path d="m8.4236,19.3998c1.0797,0,1.9794-.3599,2.6392-.9597l-1.2896-.9897c-.3599.2399-.8097.3899-1.3496.3899-1.0197,0-1.9194-.6898-2.2193-1.6495h-1.3196v1.0197c.6898,1.3496,2.0394,2.1893,3.5389,2.1893Z" fill="#34a853" stroke-width="0"></path><path d="m6.2043,16.1908c-.1799-.4799-.1799-1.0197,0-1.5295v-1.0197h-1.3196c-.5698,1.1097-.5698,2.4292,0,3.5689l1.3196-1.0197Z" fill="#fbbc04" stroke-width="0"></path><path d="m8.4236,13.0418c.5698,0,1.1097.2099,1.5295.5998h0l1.1396-1.1396c-.7198-.6598-1.6795-1.0497-2.6392-1.0197-1.4995,0-2.8791.8397-3.5389,2.1893l1.3196,1.0197c.2699-.9597,1.1696-1.6495,2.1893-1.6495Z" fill="#ea4335" stroke-width="0"></path></g></svg>'
+    ];
 
-	function escHtml( str ) {
-		return String( str || '' )
-			.replace( /&/g, '&amp;' )
-			.replace( /</g, '&lt;' )
-			.replace( />/g, '&gt;' );
-	}
+    /* -------------------------------------------------------------------------
+       Build overlay HTML
+    ------------------------------------------------------------------------- */
+    var iconsHtml = '<div class="kurv-payment-icons">' + paymentIcons.join('') + '</div>';
 
-	/* ------------------------------------------------------------------
-	   Overlay state
-	------------------------------------------------------------------ */
+    var overlay = $(
+        '<div id="kurv-payment-overlay" role="dialog" aria-modal="true" aria-label="Processing payment">' +
+            '<div class="kurv-overlay-card">' +
+                '<img class="kurv-overlay-logo" src="' + kurv_checkout_params.logoUrl + '" alt="Kurv" />' +
+                iconsHtml +
+                '<div class="kurv-spinner"></div>' +
+                '<div class="kurv-error-icon">' +
+                    '<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+                '</div>' +
+                '<p class="kurv-overlay-message">' + messages[0] + '</p>' +
+                '<span class="kurv-secure-badge">' +
+                    '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' +
+                    'Secured by Kurv' +
+                '</span>' +
+                '<div class="kurv-dismiss-bar"><div class="kurv-dismiss-bar-fill"></div></div>' +
+            '</div>' +
+        '</div>'
+    );
 
-	function showOverlay() {
-		var overlay = getOverlay() || buildOverlay();
-		var text    = overlay.querySelector( '.kurv-overlay-text' );
+    $('body').append(overlay);
 
-		overlay.classList.remove( 'kurv-overlay-error' );
-		if ( text ) {
-			text.textContent = config.preparingText || 'Preparing your secure payment\u2026'; // \u2026 = …
-		}
-		overlay.classList.add( 'kurv-overlay-visible' );
-	}
+    /* -------------------------------------------------------------------------
+       Message rotation
+    ------------------------------------------------------------------------- */
+    function startMessageRotation() {
+        msgIndex = 0;
+        msgTimer = setInterval(function () {
+            var $msg = $('.kurv-overlay-message');
+            $msg.addClass('kurv-msg-fade-out');
+            setTimeout(function () {
+                msgIndex = (msgIndex + 1) % messages.length;
+                $msg.text(messages[msgIndex]).removeClass('kurv-msg-fade-out').addClass('kurv-msg-fade-in');
+                setTimeout(function () {
+                    $msg.removeClass('kurv-msg-fade-in');
+                }, 50);
+            }, 300);
+        }, 2500);
+    }
 
-	function hideOverlay() {
-		var overlay = getOverlay();
-		if ( overlay ) {
-			overlay.classList.remove( 'kurv-overlay-visible' );
-		}
-	}
+    function stopMessageRotation() {
+        if (msgTimer) {
+            clearInterval(msgTimer);
+            msgTimer = null;
+        }
+    }
 
-	function showError( message ) {
-		var overlay = getOverlay();
-		if ( ! overlay ) {
-			return;
-		}
-		var text = overlay.querySelector( '.kurv-overlay-text' );
-		overlay.classList.add( 'kurv-overlay-error' );
-		if ( text ) {
-			text.textContent = message || config.errorText || 'Something went wrong. Please try again.';
-		}
-		setTimeout( hideOverlay, 3500 );
-	}
+    /* -------------------------------------------------------------------------
+       Show / hide
+    ------------------------------------------------------------------------- */
+    function showOverlay() {
+        $('#kurv-payment-overlay').removeClass('kurv-error').addClass('kurv-visible');
+        $('.kurv-overlay-message').text(messages[0]);
+        $('body').css('overflow', 'hidden');
+        startMessageRotation();
+    }
 
-	/* ------------------------------------------------------------------
-	   Init
-	------------------------------------------------------------------ */
+    function hideOverlay() {
+        stopMessageRotation();
+        $('#kurv-payment-overlay').removeClass('kurv-visible kurv-error');
+        $('body').css('overflow', '');
+    }
 
-	if ( typeof jQuery !== 'undefined' ) {
-		jQuery( function ( $ ) {
+    function showError(message) {
+        stopMessageRotation();
+        var $overlay = $('#kurv-payment-overlay');
+        $overlay.addClass('kurv-error');
+        $('.kurv-overlay-message').text(message || 'Something went wrong. Please try again.');
+        $overlay.find('.kurv-dismiss-bar-fill').replaceWith('<div class="kurv-dismiss-bar-fill"></div>');
+        setTimeout(function () { hideOverlay(); }, 3500);
+    }
 
-			// Only run on the checkout page.
-			if ( ! $( 'form.woocommerce-checkout' ).length ) {
-				return;
-			}
+    /* -------------------------------------------------------------------------
+       Triggers
+    ------------------------------------------------------------------------- */
+    $('form.woocommerce-checkout').on('submit', function () {
+        if ($('input[name="payment_method"]:checked').val() === 'kurv') {
+            showOverlay();
+        }
+        return true;
+    });
 
-			buildOverlay();
+    $('#place_order').on('click', function () {
+        if ($('input[name="payment_method"]:checked').val() === 'kurv') {
+            showOverlay();
+        }
+    });
 
-			// Direct form submit — stripped back to basics.
-			$( 'form.woocommerce-checkout' ).on( 'submit', function () {
-				if ( $( 'input[name="payment_method"]:checked' ).val() === 'kurv' ) {
-					showOverlay();
-				}
-			} );
+    $(document.body).on('checkout_error', function () {
+        if ($('#kurv-payment-overlay').hasClass('kurv-visible')) {
+            var errorText = $('.woocommerce-error li').first().text().trim();
+            showError(errorText);
+        }
+    });
 
-			// Hide overlay and surface error if WooCommerce reports a checkout failure.
-			$( document.body ).on( 'checkout_error', function () {
-				var $notice = $( '.woocommerce-error li' ).first();
-				var message = $notice.length ? $notice.text().trim() : ( config.errorText || '' );
-				showError( message );
-			} );
-
-		} );
-	}
-
-} )();
+}(jQuery));
