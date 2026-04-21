@@ -11,7 +11,7 @@ declare(strict_types=1);
  * Author URI:           https://kurv.com
  * License:              GPL v3 or later
  * License URI:          https://www.gnu.org/licenses/gpl-3.0.html
- * Text Domain:          kurv-woocommerce
+ * Text Domain:          kurv-payments-for-woocommerce
  * Domain Path:          /languages
  * Requires at least:    6.0
  * Requires PHP:         8.1
@@ -59,7 +59,7 @@ function kurv_init(): void {
 		return;
 	}
 
-	load_plugin_textdomain( 'kurv-woocommerce', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
+	load_plugin_textdomain( 'kurv-payments-for-woocommerce', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
 	require_once plugin_dir_path( __FILE__ ) . 'includes/class-kurv.php';
 
 	// Admin-only includes.
@@ -90,9 +90,9 @@ function kurv_test_mode_notice(): void {
 
 	printf(
 		'<div class="notice notice-warning"><p>%s <a href="%s">%s</a></p></div>',
-		esc_html__( '⚠️ Kurv Payments is in Test Mode. No real payments are being processed.', 'kurv-woocommerce' ),
+		esc_html__( '⚠️ Kurv Payments is in Test Mode. No real payments are being processed.', 'kurv-payments-for-woocommerce' ),
 		esc_url( $settings_url ),
-		esc_html__( 'Manage settings', 'kurv-woocommerce' )
+		esc_html__( 'Manage settings', 'kurv-payments-for-woocommerce' )
 	);
 }
 add_action( 'admin_notices', 'kurv_test_mode_notice' );
@@ -126,7 +126,7 @@ function kurv_plugin_links( array $links ): array {
 	);
 
 	$plugin_links = [
-		'<a href="' . esc_url( $settings_url ) . '">' . __( 'Settings', 'kurv-woocommerce' ) . '</a>',
+		'<a href="' . esc_url( $settings_url ) . '">' . __( 'Settings', 'kurv-payments-for-woocommerce' ) . '</a>',
 	];
 
 	return array_merge( $plugin_links, $links );

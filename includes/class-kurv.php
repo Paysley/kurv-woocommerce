@@ -58,8 +58,8 @@ class WC_Kurv extends WC_Payment_Gateway {
 	 */
 	public function __construct() {
 		$this->id                 = 'kurv';
-		$this->method_title       = __( 'Kurv Payments', 'kurv-woocommerce' );
-		$this->method_description = __( 'Kurv redirects customers to a secure hosted payment page to complete their purchase.', 'kurv-woocommerce' );
+		$this->method_title       = __( 'Kurv Payments', 'kurv-payments-for-woocommerce' );
+		$this->method_description = __( 'Kurv redirects customers to a secure hosted payment page to complete their purchase.', 'kurv-payments-for-woocommerce' );
 		$this->icon               = plugin_dir_url( dirname( __FILE__ ) ) . 'assets/img/kurv-logo.svg';
 		$this->has_fields         = false;
 		$this->supports           = [ 'products', 'refunds' ];
@@ -97,71 +97,71 @@ class WC_Kurv extends WC_Payment_Gateway {
 	public function init_form_fields(): void {
 		$this->form_fields = [
 			'webhook_url'      => [
-				'title'       => __( 'Payment Response URL', 'kurv-woocommerce' ),
+				'title'       => __( 'Payment Response URL', 'kurv-payments-for-woocommerce' ),
 				'type'        => 'title',
 				'description' => sprintf(
 					'<code style="display:block;padding:8px;background:#f6f7f7;border:1px solid #ddd;border-radius:3px;word-break:break-all;user-select:all;">%s</code><p class="description">%s</p>',
 					esc_url( wc_get_checkout_url() ),
-					esc_html__( 'This URL is automatically sent to Kurv with each payment request as the response_url. No manual configuration required.', 'kurv-woocommerce' )
+					esc_html__( 'This URL is automatically sent to Kurv with each payment request as the response_url. No manual configuration required.', 'kurv-payments-for-woocommerce' )
 				),
 			],
 			'enabled'          => [
-				'title'   => __( 'Enable/Disable', 'kurv-woocommerce' ),
-				'label'   => __( 'Enable Kurv Payments', 'kurv-woocommerce' ),
+				'title'   => __( 'Enable/Disable', 'kurv-payments-for-woocommerce' ),
+				'label'   => __( 'Enable Kurv Payments', 'kurv-payments-for-woocommerce' ),
 				'type'    => 'checkbox',
 				'default' => 'no',
 			],
 			'test_mode'        => [
-				'title'       => __( 'Test Mode', 'kurv-woocommerce' ),
-				'label'       => __( 'Enable test / sandbox mode', 'kurv-woocommerce' ),
+				'title'       => __( 'Test Mode', 'kurv-payments-for-woocommerce' ),
+				'label'       => __( 'Enable test / sandbox mode', 'kurv-payments-for-woocommerce' ),
 				'type'        => 'checkbox',
 				'default'     => 'no',
-				'description' => __( 'When enabled, the Test API Key is used and no real payments are processed.', 'kurv-woocommerce' ),
+				'description' => __( 'When enabled, the Test API Key is used and no real payments are processed.', 'kurv-payments-for-woocommerce' ),
 			],
 			'title'            => [
-				'title'       => __( 'Title', 'kurv-woocommerce' ),
+				'title'       => __( 'Title', 'kurv-payments-for-woocommerce' ),
 				'type'        => 'text',
-				'description' => __( 'Payment method name shown to the customer at checkout.', 'kurv-woocommerce' ),
-				'default'     => __( 'Kurv', 'kurv-woocommerce' ),
+				'description' => __( 'Payment method name shown to the customer at checkout.', 'kurv-payments-for-woocommerce' ),
+				'default'     => __( 'Kurv', 'kurv-payments-for-woocommerce' ),
 				'desc_tip'    => true,
 			],
 			'description'      => [
-				'title'       => __( 'Description', 'kurv-woocommerce' ),
+				'title'       => __( 'Description', 'kurv-payments-for-woocommerce' ),
 				'type'        => 'text',
-				'description' => __( 'Description shown below the payment method title at checkout.', 'kurv-woocommerce' ),
-				'default'     => __( 'Pay securely via Kurv.', 'kurv-woocommerce' ),
+				'description' => __( 'Description shown below the payment method title at checkout.', 'kurv-payments-for-woocommerce' ),
+				'default'     => __( 'Pay securely via Kurv.', 'kurv-payments-for-woocommerce' ),
 				'desc_tip'    => true,
 			],
 			'live_access_key'  => [
-				'title'       => __( 'Live API Key', 'kurv-woocommerce' ),
+				'title'       => __( 'Live API Key', 'kurv-payments-for-woocommerce' ),
 				'type'        => 'password',
-				'description' => __( 'Starts with <code>kp_live_</code>. Found in your Kurv developer portal.', 'kurv-woocommerce' ),
+				'description' => __( 'Starts with <code>kp_live_</code>. Found in your Kurv developer portal.', 'kurv-payments-for-woocommerce' ),
 				'default'     => '',
 			],
 			'test_access_key'  => [
-				'title'       => __( 'Test API Key', 'kurv-woocommerce' ),
+				'title'       => __( 'Test API Key', 'kurv-payments-for-woocommerce' ),
 				'type'        => 'password',
-				'description' => __( 'Starts with <code>kp_test_</code>. Found in your Kurv developer portal.', 'kurv-woocommerce' ),
+				'description' => __( 'Starts with <code>kp_test_</code>. Found in your Kurv developer portal.', 'kurv-payments-for-woocommerce' ),
 				'default'     => '',
 			],
 			'enable_wallet_methods' => [
-				'title'       => __( 'Apple Pay / Google Pay', 'kurv-woocommerce' ),
-				'label'       => __( 'Enable Apple Pay and Google Pay on the Kurv payment page', 'kurv-woocommerce' ),
+				'title'       => __( 'Apple Pay / Google Pay', 'kurv-payments-for-woocommerce' ),
+				'label'       => __( 'Enable Apple Pay and Google Pay on the Kurv payment page', 'kurv-payments-for-woocommerce' ),
 				'type'        => 'checkbox',
 				'default'     => 'no',
-				'description' => __( 'When enabled, customers will see Apple Pay and Google Pay options on the hosted Kurv payment page.', 'kurv-woocommerce' ),
+				'description' => __( 'When enabled, customers will see Apple Pay and Google Pay options on the hosted Kurv payment page.', 'kurv-payments-for-woocommerce' ),
 			],
 			'kurv_send_receipt'    => [
-				'title'       => __( 'Kurv Receipt Email', 'kurv-woocommerce' ),
-				'label'       => __( 'Let Kurv send its own payment receipt to the customer', 'kurv-woocommerce' ),
+				'title'       => __( 'Kurv Receipt Email', 'kurv-payments-for-woocommerce' ),
+				'label'       => __( 'Let Kurv send its own payment receipt to the customer', 'kurv-payments-for-woocommerce' ),
 				'type'        => 'checkbox',
 				'default'     => 'no',
-				'description' => __( 'By default, only WooCommerce sends a receipt. Enable this to also send a Kurv receipt. Note: the customer will receive two emails.', 'kurv-woocommerce' ),
+				'description' => __( 'By default, only WooCommerce sends a receipt. Enable this to also send a Kurv receipt. Note: the customer will receive two emails.', 'kurv-payments-for-woocommerce' ),
 			],
 			'payment_expiry_hours' => [
-				'title'       => __( 'Payment Link Expiry', 'kurv-woocommerce' ),
+				'title'       => __( 'Payment Link Expiry', 'kurv-payments-for-woocommerce' ),
 				'type'        => 'number',
-				'description' => __( 'Hours before a Kurv payment link expires. Leave blank for no expiry.', 'kurv-woocommerce' ),
+				'description' => __( 'Hours before a Kurv payment link expires. Leave blank for no expiry.', 'kurv-payments-for-woocommerce' ),
 				'default'     => '24',
 				'desc_tip'    => true,
 				'custom_attributes' => [
@@ -171,20 +171,20 @@ class WC_Kurv extends WC_Payment_Gateway {
 				],
 			],
 			'payment_type'         => [
-				'title'       => __( 'Payment Type', 'kurv-woocommerce' ),
+				'title'       => __( 'Payment Type', 'kurv-payments-for-woocommerce' ),
 				'type'        => 'select',
-				'description' => __( 'DB charges the customer immediately. PA pre-authorises only — you capture manually from the order screen.', 'kurv-woocommerce' ),
+				'description' => __( 'DB charges the customer immediately. PA pre-authorises only — you capture manually from the order screen.', 'kurv-payments-for-woocommerce' ),
 				'default'     => 'DB',
 				'options'     => [
-					'DB' => __( 'DB — Direct Billing (charge immediately)', 'kurv-woocommerce' ),
-					'PA' => __( 'PA — Pre-authorisation (capture manually)', 'kurv-woocommerce' ),
+					'DB' => __( 'DB — Direct Billing (charge immediately)', 'kurv-payments-for-woocommerce' ),
+					'PA' => __( 'PA — Pre-authorisation (capture manually)', 'kurv-payments-for-woocommerce' ),
 				],
 				'desc_tip'    => true,
 			],
 			'enable_logging'   => [
-				'title'   => __( 'Enable Logging', 'kurv-woocommerce' ),
+				'title'   => __( 'Enable Logging', 'kurv-payments-for-woocommerce' ),
 				'type'    => 'checkbox',
-				'label'   => __( 'Log API requests and responses for debugging.', 'kurv-woocommerce' ),
+				'label'   => __( 'Log API requests and responses for debugging.', 'kurv-payments-for-woocommerce' ),
 				'default' => 'no',
 			],
 		];
@@ -202,8 +202,8 @@ class WC_Kurv extends WC_Payment_Gateway {
 		if ( empty( $active_key ) ) {
 			WC_Admin_Settings::add_error(
 				$is_test
-					? __( 'Please enter a Test API Key (starts with kp_test_).', 'kurv-woocommerce' )
-					: __( 'Please enter a Live API Key (starts with kp_live_).', 'kurv-woocommerce' )
+					? __( 'Please enter a Test API Key (starts with kp_test_).', 'kurv-payments-for-woocommerce' )
+					: __( 'Please enter a Live API Key (starts with kp_live_).', 'kurv-payments-for-woocommerce' )
 			);
 			return;
 		}
@@ -214,11 +214,11 @@ class WC_Kurv extends WC_Payment_Gateway {
 
 		if ( $is_test && $is_live_key ) {
 			WC_Admin_Settings::add_error(
-				__( 'Warning: Test Mode is enabled but a Live API Key was entered. Please enter your Test API Key (starts with kp_test_).', 'kurv-woocommerce' )
+				__( 'Warning: Test Mode is enabled but a Live API Key was entered. Please enter your Test API Key (starts with kp_test_).', 'kurv-payments-for-woocommerce' )
 			);
 		} elseif ( ! $is_test && $is_test_key ) {
 			WC_Admin_Settings::add_error(
-				__( 'Warning: Test Mode is disabled but a Test API Key was entered. Please enter your Live API Key (starts with kp_live_), or enable Test Mode.', 'kurv-woocommerce' )
+				__( 'Warning: Test Mode is disabled but a Test API Key was entered. Please enter your Live API Key (starts with kp_live_), or enable Test Mode.', 'kurv-payments-for-woocommerce' )
 			);
 		}
 	}
@@ -297,8 +297,8 @@ class WC_Kurv extends WC_Payment_Gateway {
 
 		wp_localize_script( 'kurv-checkout', 'kurv_checkout_params', [
 			'logoUrl'       => $base . 'assets/img/kurv-logo.svg',
-			'preparingText' => __( 'Preparing your secure payment…', 'kurv-woocommerce' ),
-			'errorText'     => __( 'Something went wrong. Please try again.', 'kurv-woocommerce' ),
+			'preparingText' => __( 'Preparing your secure payment…', 'kurv-payments-for-woocommerce' ),
+			'errorText'     => __( 'Something went wrong. Please try again.', 'kurv-payments-for-woocommerce' ),
 		] );
 	}
 
@@ -428,7 +428,7 @@ class WC_Kurv extends WC_Payment_Gateway {
 		}
 
 		if ( 422 === $results['response']['code'] && 'currency' === ( $results['body']['error_field'] ?? '' ) ) {
-			throw new \Exception( __( 'We are sorry, this currency is not supported. Please contact us.', 'kurv-woocommerce' ), 1 );
+			throw new \Exception( __( 'We are sorry, this currency is not supported. Please contact us.', 'kurv-payments-for-woocommerce' ), 1 );
 		}
 
 		if ( ! empty( $results['body']['error_message'] ) ) {
@@ -439,7 +439,7 @@ class WC_Kurv extends WC_Payment_Gateway {
 			throw new \Exception( esc_html( $results['body']['message'] ), 1 );
 		}
 
-		throw new \Exception( __( 'Payment could not be initiated. Please try again.', 'kurv-woocommerce' ), 1 );
+		throw new \Exception( __( 'Payment could not be initiated. Please try again.', 'kurv-payments-for-woocommerce' ), 1 );
 	}
 
 	/**
@@ -560,14 +560,14 @@ class WC_Kurv extends WC_Payment_Gateway {
 
 			$note = sprintf(
 				/* translators: 1: refunded amount, 2: Kurv refund ref number */
-				__( 'Kurv partial refund of %1$s successful. Kurv ref: %2$s.', 'kurv-woocommerce' ),
+				__( 'Kurv partial refund of %1$s successful. Kurv ref: %2$s.', 'kurv-payments-for-woocommerce' ),
 				wc_price( (float) $refunded_amount, [ 'currency' => $order->get_currency() ] ),
 				$ref_number
 			);
 			if ( null !== $balance ) {
 				$note .= ' ' . sprintf(
 					/* translators: remaining refundable amount */
-					__( 'Remaining refundable: %s.', 'kurv-woocommerce' ),
+					__( 'Remaining refundable: %s.', 'kurv-payments-for-woocommerce' ),
 					wc_price( (float) $balance, [ 'currency' => $order->get_currency() ] )
 				);
 			}
@@ -579,7 +579,7 @@ class WC_Kurv extends WC_Payment_Gateway {
 		$this->log( 'process_refund: failed' );
 		return new \WP_Error(
 			(string) $results['response']['code'],
-			__( 'Refund failed', 'kurv-woocommerce' ) . ': ' . ( $results['body']['message'] ?? '' )
+			__( 'Refund failed', 'kurv-payments-for-woocommerce' ) . ': ' . ( $results['body']['message'] ?? '' )
 		);
 	}
 
@@ -617,7 +617,7 @@ class WC_Kurv extends WC_Payment_Gateway {
 		if ( is_wp_error( $results ) ) {
 			$order->add_order_note(
 				sprintf(
-					__( 'Kurv full refund failed: %s', 'kurv-woocommerce' ),
+					__( 'Kurv full refund failed: %s', 'kurv-payments-for-woocommerce' ),
 					esc_html( $results->get_error_message() )
 				)
 			);
@@ -633,15 +633,15 @@ class WC_Kurv extends WC_Payment_Gateway {
 			$this->restock_refunded_items( $order );
 			$order->add_order_note( sprintf(
 				/* translators: Kurv refund reference number */
-				__( 'Kurv full refund successful. Kurv ref: %s.', 'kurv-woocommerce' ),
+				__( 'Kurv full refund successful. Kurv ref: %s.', 'kurv-payments-for-woocommerce' ),
 				$ref_number
 			) );
 			$this->log( 'process_full_refund: success' );
 		} else {
 			$order->add_order_note(
 				sprintf(
-					__( 'Kurv full refund failed: %s', 'kurv-woocommerce' ),
-					esc_html( $results['body']['message'] ?? __( 'unknown error', 'kurv-woocommerce' ) )
+					__( 'Kurv full refund failed: %s', 'kurv-payments-for-woocommerce' ),
+					esc_html( $results['body']['message'] ?? __( 'unknown error', 'kurv-payments-for-woocommerce' ) )
 				)
 			);
 			$this->log( 'process_full_refund: failed' );
@@ -681,7 +681,7 @@ class WC_Kurv extends WC_Payment_Gateway {
 		$payment_amount = (float) ( $results['body']['payment']['amount'] ?? 0 );
 		if ( $payment_amount > $order_amount ) {
 			$order->add_order_note(
-				__( 'Kurv: The payment amount exceeds the order total (the customer may have added a tip or tax). Please contact Kurv support to refund the remaining amount.', 'kurv-woocommerce' )
+				__( 'Kurv: The payment amount exceeds the order total (the customer may have added a tip or tax). Please contact Kurv support to refund the remaining amount.', 'kurv-payments-for-woocommerce' )
 			);
 		}
 	}
@@ -708,7 +708,7 @@ class WC_Kurv extends WC_Payment_Gateway {
 		if ( 'PA' !== $this->get_option( 'payment_type', 'DB' ) ) {
 			return $actions;
 		}
-		$actions['kurv_capture_payment'] = __( 'Capture Kurv pre-authorised payment', 'kurv-woocommerce' );
+		$actions['kurv_capture_payment'] = __( 'Capture Kurv pre-authorised payment', 'kurv-payments-for-woocommerce' );
 		return $actions;
 	}
 
@@ -726,7 +726,7 @@ class WC_Kurv extends WC_Payment_Gateway {
 
 		$payment_id = $order->get_meta( '_kurv_payment_id', true );
 		if ( empty( $payment_id ) ) {
-			$order->add_order_note( __( 'Kurv capture failed: no payment ID on order.', 'kurv-woocommerce' ) );
+			$order->add_order_note( __( 'Kurv capture failed: no payment ID on order.', 'kurv-payments-for-woocommerce' ) );
 			return;
 		}
 
@@ -739,7 +739,7 @@ class WC_Kurv extends WC_Payment_Gateway {
 		if ( is_wp_error( $result ) ) {
 			$order->add_order_note( sprintf(
 				/* translators: error message from Kurv API */
-				__( 'Kurv capture failed: %s', 'kurv-woocommerce' ),
+				__( 'Kurv capture failed: %s', 'kurv-payments-for-woocommerce' ),
 				esc_html( $result->get_error_message() )
 			) );
 			return;
@@ -754,15 +754,15 @@ class WC_Kurv extends WC_Payment_Gateway {
 					break;
 				}
 			}
-			$order->update_status( $order_status, __( 'Kurv pre-authorised payment captured successfully.', 'kurv-woocommerce' ) );
+			$order->update_status( $order_status, __( 'Kurv pre-authorised payment captured successfully.', 'kurv-payments-for-woocommerce' ) );
 			$order->save();
 			return;
 		}
 
-		$error = $result['body']['message'] ?? $result['body']['error_message'] ?? __( 'unknown error', 'kurv-woocommerce' );
+		$error = $result['body']['message'] ?? $result['body']['error_message'] ?? __( 'unknown error', 'kurv-payments-for-woocommerce' );
 		$order->add_order_note( sprintf(
 			/* translators: error message from Kurv API */
-			__( 'Kurv capture failed: %s', 'kurv-woocommerce' ),
+			__( 'Kurv capture failed: %s', 'kurv-payments-for-woocommerce' ),
 			esc_html( $error )
 		) );
 	}
@@ -829,7 +829,7 @@ class WC_Kurv extends WC_Payment_Gateway {
 
 			if ( 'PA' === $this->payment_type ) {
 				$this->log( 'response_page: PA — setting order to on-hold (capture required)' );
-				$order->update_status( 'on-hold', __( 'Kurv payment pre-authorised. Capture required.', 'kurv-woocommerce' ) );
+				$order->update_status( 'on-hold', __( 'Kurv payment pre-authorised. Capture required.', 'kurv-payments-for-woocommerce' ) );
 			} else {
 				$order_status = 'completed';
 				foreach ( $order->get_items() as $order_item ) {
@@ -840,7 +840,7 @@ class WC_Kurv extends WC_Payment_Gateway {
 					}
 				}
 				$this->log( 'response_page: updating order status to ' . $order_status );
-				$order->update_status( $order_status, __( 'Kurv payment successful.', 'kurv-woocommerce' ) );
+				$order->update_status( $order_status, __( 'Kurv payment successful.', 'kurv-payments-for-woocommerce' ) );
 			}
 
 			$order->save();
@@ -848,7 +848,7 @@ class WC_Kurv extends WC_Payment_Gateway {
 			$this->log( 'response_page: payment not acknowledged, marking failed' );
 
 			$order->update_meta_data( '_kurv_payment_result', 'failed' );
-			$order->update_status( 'failed', __( 'Kurv payment failed.', 'kurv-woocommerce' ) );
+			$order->update_status( 'failed', __( 'Kurv payment failed.', 'kurv-payments-for-woocommerce' ) );
 			$order->save();
 		}
 	}
@@ -901,7 +901,7 @@ class WC_Kurv extends WC_Payment_Gateway {
 	 */
 	public static function check_and_create_product_category( int $product_id ): ?string {
 		$product_categories = wp_get_post_terms( $product_id, 'product_cat' );
-		$category_name      = count( $product_categories ) ? $product_categories[0]->name : __( 'Uncategorised', 'kurv-woocommerce' );
+		$category_name      = count( $product_categories ) ? $product_categories[0]->name : __( 'Uncategorised', 'kurv-payments-for-woocommerce' );
 
 		$result = Kurv_API::category_list( $category_name );
 		if ( is_wp_error( $result ) || 200 !== $result['response']['code'] || 'success' !== $result['body']['result'] ) {

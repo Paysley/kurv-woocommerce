@@ -42,7 +42,7 @@ class Kurv_Order_Meta_Box {
 
 		add_meta_box(
 			'kurv-order-details',
-			__( 'Kurv Payment', 'kurv-woocommerce' ),
+			__( 'Kurv Payment', 'kurv-payments-for-woocommerce' ),
 			[ __CLASS__, 'render' ],
 			$screen,
 			'side',
@@ -61,7 +61,7 @@ class Kurv_Order_Meta_Box {
 			: wc_get_order( $order_or_post->ID );
 
 		if ( ! $order || 'kurv' !== $order->get_payment_method() ) {
-			echo '<p>' . esc_html__( 'No Kurv payment data for this order.', 'kurv-woocommerce' ) . '</p>';
+			echo '<p>' . esc_html__( 'No Kurv payment data for this order.', 'kurv-payments-for-woocommerce' ) . '</p>';
 			return;
 		}
 
@@ -90,13 +90,13 @@ class Kurv_Order_Meta_Box {
 			<table>
 				<?php if ( $is_test ) : ?>
 				<tr>
-					<td colspan="2"><span class="kurv-badge kurv-badge-test"><?php esc_html_e( 'Test Mode', 'kurv-woocommerce' ); ?></span></td>
+					<td colspan="2"><span class="kurv-badge kurv-badge-test"><?php esc_html_e( 'Test Mode', 'kurv-payments-for-woocommerce' ); ?></span></td>
 				</tr>
 				<?php endif; ?>
 
 				<?php if ( $result ) : ?>
 				<tr>
-					<td><?php esc_html_e( 'Result', 'kurv-woocommerce' ); ?></td>
+					<td><?php esc_html_e( 'Result', 'kurv-payments-for-woocommerce' ); ?></td>
 					<td>
 						<span class="kurv-badge <?php echo 'success' === $result ? 'kurv-badge-success' : 'kurv-badge-failed'; ?>">
 							<?php echo esc_html( $result ); ?>
@@ -107,35 +107,35 @@ class Kurv_Order_Meta_Box {
 
 				<?php if ( $payment_id ) : ?>
 				<tr>
-					<td><?php esc_html_e( 'Payment ID', 'kurv-woocommerce' ); ?></td>
+					<td><?php esc_html_e( 'Payment ID', 'kurv-payments-for-woocommerce' ); ?></td>
 					<td><span class="kurv-mono"><?php echo esc_html( $payment_id ); ?></span></td>
 				</tr>
 				<?php endif; ?>
 
 				<?php if ( $short_url ) : ?>
 				<tr>
-					<td><?php esc_html_e( 'Payment Link', 'kurv-woocommerce' ); ?></td>
+					<td><?php esc_html_e( 'Payment Link', 'kurv-payments-for-woocommerce' ); ?></td>
 					<td><a href="<?php echo esc_url( $short_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $short_url ); ?></a></td>
 				</tr>
 				<?php endif; ?>
 
 				<?php if ( $qrcode_url ) : ?>
 				<tr>
-					<td><?php esc_html_e( 'QR Code', 'kurv-woocommerce' ); ?></td>
-					<td><a href="<?php echo esc_url( $qrcode_url ); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e( 'View QR Code', 'kurv-woocommerce' ); ?></a></td>
+					<td><?php esc_html_e( 'QR Code', 'kurv-payments-for-woocommerce' ); ?></td>
+					<td><a href="<?php echo esc_url( $qrcode_url ); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e( 'View QR Code', 'kurv-payments-for-woocommerce' ); ?></a></td>
 				</tr>
 				<?php endif; ?>
 
 				<?php if ( $refund_ref ) : ?>
 				<tr>
-					<td><?php esc_html_e( 'Refund Ref', 'kurv-woocommerce' ); ?></td>
+					<td><?php esc_html_e( 'Refund Ref', 'kurv-payments-for-woocommerce' ); ?></td>
 					<td><span class="kurv-mono"><?php echo esc_html( $refund_ref ); ?></span></td>
 				</tr>
 				<?php endif; ?>
 
 				<?php if ( ! $payment_id && ! $short_url ) : ?>
 				<tr>
-					<td colspan="2"><?php esc_html_e( 'Payment pending or not yet processed.', 'kurv-woocommerce' ); ?></td>
+					<td colspan="2"><?php esc_html_e( 'Payment pending or not yet processed.', 'kurv-payments-for-woocommerce' ); ?></td>
 				</tr>
 				<?php endif; ?>
 			</table>
