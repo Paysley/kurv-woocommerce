@@ -7,14 +7,13 @@
     'use strict';
 
     /* -------------------------------------------------------------------------
-       Rotating messages
+       Rotating messages \u2014 translated server-side and passed in via
+       wp_localize_script, so they follow the store's locale.
     ------------------------------------------------------------------------- */
-    var messages = [
-        'Hang tight \u2014 building your secure payment page\u2026',
-        'We know you\u2019re in a hurry. Almost there\u2026',
-        'Connecting you to Kurv\u2026',
-        'Your payment page is being handcrafted\u2026'
-    ];
+    var params   = window.kurv_checkout_params || {};
+    var messages = ( params.messages && params.messages.length )
+        ? params.messages
+        : [ 'Preparing your secure payment\u2026' ];
     var msgIndex = 0;
     var msgTimer = null;
 
@@ -47,23 +46,30 @@
     var iconsHtml = '<div class="kurv-payment-icons">' + paymentIcons.join('') + '</div>';
 
     var overlay = $(
-        '<div id="kurv-payment-overlay" role="dialog" aria-modal="true" aria-label="Processing payment">' +
+        '<div id="kurv-payment-overlay" role="dialog" aria-modal="true">' +
             '<div class="kurv-overlay-card">' +
-                '<img class="kurv-overlay-logo" src="' + kurv_checkout_params.logoUrl + '" alt="Kurv" />' +
+                '<img class="kurv-overlay-logo" alt="" />' +
                 iconsHtml +
                 '<div class="kurv-spinner"></div>' +
                 '<div class="kurv-error-icon">' +
                     '<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
                 '</div>' +
-                '<p class="kurv-overlay-message">' + messages[0] + '</p>' +
+                '<p class="kurv-overlay-message"></p>' +
                 '<span class="kurv-secure-badge">' +
                     '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' +
-                    'Secured by Kurv' +
+                    '<span class="kurv-secure-badge-text"></span>' +
                 '</span>' +
                 '<div class="kurv-dismiss-bar"><div class="kurv-dismiss-bar-fill"></div></div>' +
             '</div>' +
         '</div>'
     );
+
+    // Set all text and attributes via the DOM API rather than string concatenation,
+    // so translated content is never interpolated into markup.
+    overlay.attr('aria-label', params.processingText || '');
+    overlay.find('.kurv-overlay-logo').attr({ src: params.logoUrl || '', alt: params.brandText || '' });
+    overlay.find('.kurv-overlay-message').text(messages[0]);
+    overlay.find('.kurv-secure-badge-text').text(params.secureText || '');
 
     $('body').append(overlay);
 
@@ -112,7 +118,7 @@
         stopMessageRotation();
         var $overlay = $('#kurv-payment-overlay');
         $overlay.addClass('kurv-error');
-        $('.kurv-overlay-message').text(message || 'Something went wrong. Please try again.');
+        $('.kurv-overlay-message').text(message || params.errorText || '');
         $overlay.find('.kurv-dismiss-bar-fill').replaceWith('<div class="kurv-dismiss-bar-fill"></div>');
         setTimeout(function () { hideOverlay(); }, 3500);
     }

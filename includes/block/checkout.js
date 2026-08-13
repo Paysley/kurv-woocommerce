@@ -1,6 +1,6 @@
 /* global kurv_settings */
 const settings = window.kurv_settings || {};
-const label = window.wp.htmlEntities.decodeEntities( settings.title ) || window.wp.i18n.__( 'Kurv', 'kurv-woocommerce' );
+const label = window.wp.htmlEntities.decodeEntities( settings.title ) || window.wp.i18n.__( 'Kurv', 'kurv-payments-for-woocommerce' );
 
 const Content = () => {
 	return window.wp.htmlEntities.decodeEntities( settings.description || '' );

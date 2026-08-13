@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * Plugin Name:          Kurv Payments for WooCommerce
- * Plugin URI:           https://github.com/kurv/kurv-woocommerce
+ * Plugin URI:           https://github.com/Paysley/kurv-woocommerce
  * Description:          Accept payments through Kurv.
  * Version:              1.0.0
  * Author:               Kurv
@@ -15,8 +15,9 @@ declare(strict_types=1);
  * Domain Path:          /languages
  * Requires at least:    6.0
  * Requires PHP:         8.1
+ * Requires Plugins:     woocommerce
  * WC requires at least: 8.0
- * WC tested up to:      9.4
+ * WC tested up to:      11.0
  *
  * @package Kurv
  */
@@ -45,10 +46,18 @@ function kurv_activate_plugin(): void {
 
 /**
  * Runs on plugin deletion.
+ *
+ * Order meta is deliberately left in place: it is part of the merchant's
+ * financial record and must survive an uninstall.
  */
 function kurv_uninstall_plugin(): void {
 	delete_option( 'kurv_plugin_version' );
 	delete_option( 'woocommerce_kurv_settings' );
+
+	// Drop queued background work so it cannot fire against a removed plugin.
+	if ( function_exists( 'as_unschedule_all_actions' ) ) {
+		as_unschedule_all_actions( '', [], 'kurv' );
+	}
 }
 
 /**
@@ -59,8 +68,9 @@ function kurv_init(): void {
 		return;
 	}
 
-	load_plugin_textdomain( 'kurv-payments-for-woocommerce', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
-	require_once plugin_dir_path( __FILE__ ) . 'includes/class-kurv.php';
+	// Translations load automatically for WordPress.org-hosted plugins whose text
+	// domain matches their slug, so no load_plugin_textdomain() call is needed.
+	require_once plugin_dir_path( __FILE__ ) . 'includes/class-kurv-payments-gateway.php';
 
 	// Admin-only includes.
 	if ( is_admin() ) {
@@ -104,7 +114,7 @@ add_action( 'admin_notices', 'kurv_test_mode_notice' );
  * @return array<int,string>
  */
 function kurv_add_gateway( array $methods ): array {
-	$methods[] = 'WC_Kurv';
+	$methods[] = 'Kurv_Payments_Gateway';
 	return $methods;
 }
 add_filter( 'woocommerce_payment_gateways', 'kurv_add_gateway' );
@@ -147,12 +157,66 @@ function kurv_add_query_vars( array $vars ): array {
 add_filter( 'query_vars', 'kurv_add_query_vars' );
 
 /**
- * Sync a product to Kurv whenever it is created or updated.
+ * Queue a Kurv product sync whenever a product is created or updated.
+ *
+ * Queued rather than run inline: the sync makes up to three blocking API calls,
+ * which would otherwise stall every product save in wp-admin.
  */
 add_action( 'woocommerce_new_product', 'kurv_sync_product', 10, 1 );
 add_action( 'woocommerce_update_product', 'kurv_sync_product', 10, 1 );
 function kurv_sync_product( int $product_id ): void {
-	WC_Kurv::update_product_on_kurv( $product_id );
+	Kurv_Payments_Gateway::queue_product_sync( $product_id );
+}
+
+/**
+ * Run a queued product sync (Action Scheduler callback).
+ */
+add_action( 'kurv_do_product_sync', 'kurv_run_product_sync', 10, 1 );
+function kurv_run_product_sync( int $product_id ): void {
+	Kurv_Payments_Gateway::update_product_on_kurv( $product_id );
+}
+
+/**
+ * Run a queued customer sync (Action Scheduler callback).
+ */
+add_action( 'kurv_do_customer_sync', 'kurv_run_customer_sync', 10, 1 );
+function kurv_run_customer_sync( int $order_id ): void {
+	$order = wc_get_order( $order_id );
+
+	if ( $order ) {
+		Kurv_Payments_Gateway::update_customer_on_kurv( $order );
+	}
+}
+
+/**
+ * Return the live Kurv gateway instance from WooCommerce's registry.
+ *
+ * Uses the registry rather than `new` so the gateway's constructor — and the
+ * hooks it registers — runs exactly once per request.
+ */
+function kurv_get_gateway(): ?Kurv_Payments_Gateway {
+	if ( ! function_exists( 'WC' ) || ! WC()->payment_gateways() ) {
+		return null;
+	}
+
+	$gateway = WC()->payment_gateways()->payment_gateways()['kurv'] ?? null;
+
+	return $gateway instanceof Kurv_Payments_Gateway ? $gateway : null;
+}
+
+/**
+ * Reconcile an order against the Kurv API (Action Scheduler callback).
+ *
+ * Bound at file scope because Action Scheduler runs in background requests that
+ * never load the payment gateways by themselves.
+ */
+add_action( 'kurv_reconcile_order', 'kurv_run_reconcile_order', 10, 1 );
+function kurv_run_reconcile_order( int $order_id ): void {
+	$gateway = kurv_get_gateway();
+
+	if ( $gateway ) {
+		$gateway->reconcile_order( $order_id );
+	}
 }
 
 /**
@@ -184,12 +248,12 @@ function kurv_register_block_payment_method(): void {
 		return;
 	}
 
-	require_once plugin_dir_path( __FILE__ ) . 'includes/class-kurv-block-checkout.php';
+	require_once plugin_dir_path( __FILE__ ) . 'includes/class-kurv-payments-blocks.php';
 
 	add_action(
 		'woocommerce_blocks_payment_method_type_registration',
 		function ( \Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry $registry ): void {
-			$registry->register( new WC_Kurv_Blocks() );
+			$registry->register( new Kurv_Payments_Blocks() );
 		}
 	);
 }

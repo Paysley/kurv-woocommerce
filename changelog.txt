@@ -1,3 +1,79 @@
+= 1.0.0 — 2026-08-13 =
+
+Pre-release hardening ahead of WordPress.org approval. Applied to the 1.0.0
+submission rather than versioned separately, as 1.0.0 has not been published.
+
+Payment reliability:
+* Fixed: the payment result is now received on a dedicated server-to-server
+  endpoint (/wc-api/kurv/). Previously response_url pointed at the thank-you
+  page and the result was read with get_query_var(), which cannot see a POST
+  body — so Kurv's callback was effectively ignored and an order only completed
+  if the customer's browser made it back.
+* Fixed: an order is no longer marked failed when the browser return carries no
+  payment result. Any request to the thank-you URL with a valid token but no
+  response parameter used to fail the order, including Kurv's own callback.
+* Fixed: successful payments now go through WC_Order::payment_complete() instead
+  of a manual update_status() call, so the paid date, transaction ID, stock
+  reduction and the woocommerce_payment_complete hook all fire correctly.
+* Added: scheduled reconciliation. Orders still awaiting payment are re-checked
+  against the Kurv API after 10 minutes, 1 hour and 6 hours. Reconciliation can
+  only move an order forward to paid, never fail it.
+* Added: Kurv_API::get_payment_request() (GET /payment-requests/{id}), and the
+  Kurv transaction ID is now stored on the order so reconciliation has something
+  to look up.
+* Fixed: applying a payment result is now idempotent, so the callback and the
+  browser return racing each other cannot double-process an order.
+* Fixed: payment tokens are compared with hash_equals() and no longer depend on
+  fields taken from the callback payload — a payload omitting the currency could
+  previously never be verified.
+
+Correctness:
+* Fixed: get_country_code() is now static. It was an instance method called via
+  ( new self() ) on every checkout, and each throwaway gateway instance
+  re-registered every constructor hook — including the refund handlers.
+* Fixed: undefined array offset warning in the order meta box when the gateway
+  settings option does not yet exist.
+* Fixed: refunds against an order with no Kurv payment ID now return a clear
+  error instead of calling the API with an empty ID.
+* Fixed: API responses that are not valid JSON no longer emit warnings when the
+  plugin reads the response body.
+* Fixed: get_cart_items() no longer fatals when a product has been deleted since
+  the order was placed.
+* Fixed: the 429 retry now makes at most 3 requests total, matching its
+  documented behaviour (it previously made 4 and slept up to 7 seconds).
+
+Performance:
+* Changed: product sync runs through Action Scheduler instead of blocking the
+  request. Saving a product made up to three API calls with a 70-second timeout
+  each, and checkout synced every unsynced product inline.
+
+WordPress.org Plugin Check:
+* Fixed: exception messages passed through esc_html() (3 errors).
+* Fixed: translators comments added to two placeholder strings (2 errors).
+* Fixed: $_GET['section'] unslashed and sanitized.
+* Fixed: global classes prefixed — WC_Kurv is now Kurv_Payments_Gateway and
+  WC_Kurv_Blocks is now Kurv_Payments_Blocks. Class files renamed to match.
+* Fixed: removed the discouraged load_plugin_textdomain() call.
+* Fixed: readme "Tested up to" raised to 7.0.
+* Fixed: removed .DS_Store files and hardened .gitignore. Releases should be
+  built with git archive so untracked files cannot be packaged.
+* Fixed: block checkout JS used the wrong text domain, so one string could not
+  be translated.
+* Changed: meta box CSS moved out of an inline <style> block into an enqueued
+  stylesheet.
+
+Other:
+* Changed: plugin headers declare Requires Plugins: woocommerce and WC tested up
+  to 11.0.
+* Changed: the order meta box uses the public OrderUtil API to detect HPOS
+  instead of a class under WooCommerce's \Internal\ namespace.
+* Changed: checkout overlay strings are translatable and set via the DOM rather
+  than interpolated into markup.
+* Removed: the Payment Link Expiry setting, which had no effect — the code
+  behind it is commented out pending confirmation of the format Kurv accepts.
+* Fixed: the settings screen showed the checkout URL as the payment response
+  URL; it now shows the real callback endpoint.
+
 = 1.0.0 — 2026-04-01 =
 * Initial release of Kurv Payments for WooCommerce.
 * Full rebrand from Paysley; all references updated.

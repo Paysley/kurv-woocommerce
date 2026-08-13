@@ -2,7 +2,7 @@
 Contributors: kurv
 Tags: woocommerce, payment, gateway, kurv
 Requires at least: 6.0
-Tested up to: 6.9
+Tested up to: 7.0
 Requires PHP: 8.1
 Stable tag: 1.0.0
 License: GPLv3
@@ -19,8 +19,12 @@ and the new Cart & Checkout blocks.
 * Secure hosted payment page — no card data touches your server
 * Live and test (sandbox) mode with separate API keys
 * Partial and full refunds from WooCommerce admin
+* Optional pre-authorisation with manual capture from the order screen
+* Optional Apple Pay and Google Pay on the hosted payment page
 * WooCommerce Blocks (Gutenberg checkout) support
 * HPOS (High-Performance Order Storage) compatible
+* Server-to-server payment confirmation, so orders complete even if the
+  customer closes their browser on the payment page
 * Transaction logging for debugging
 
 = Requirements =
@@ -45,6 +49,22 @@ Yes. The plugin is fully compatible with the WooCommerce Cart & Checkout blocks.
 
 = Does this support refunds? =
 Yes. Partial and full refunds are supported from the WooCommerce order screen.
+
+= What happens if a customer closes their browser after paying? =
+The order still completes. Kurv confirms every payment to the plugin with a
+server-to-server callback, independently of the customer's browser. As a further
+safety net the plugin re-checks any order that is still awaiting payment against
+the Kurv API after 10 minutes, 1 hour and 6 hours.
+
+= Do I need to configure a webhook or callback URL? =
+No. The plugin sends its own callback URL with every payment request. The URL is
+shown at the top of the Kurv settings screen for reference.
+
+= Which data is sent to Kurv? =
+Kurv is the payment processor for your store, so completing a purchase sends the
+order total and currency, the billing name, email address, phone number and
+address, and the line items in the order. See the Kurv privacy policy and terms
+at https://kurv.com for how that data is handled.
 
 == Changelog ==
 See changelog.txt for full version history.

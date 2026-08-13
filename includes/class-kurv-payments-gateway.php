@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * WC_Kurv Payment Gateway
+ * Kurv_Payments_Gateway — Kurv payment gateway for WooCommerce.
  *
  * @package Kurv
  */
@@ -17,14 +17,29 @@ require_once dirname( __FILE__ ) . '/class-kurv-api.php';
 /**
  * Kurv payment gateway class.
  *
- * Redirects customers to a hosted Kurv payment page. On return, the
- * payment status is read from the response query var and the order is
- * updated accordingly.
+ * Redirects customers to a hosted Kurv payment page. The authoritative
+ * payment result arrives on the server-to-server callback endpoint
+ * (/wc-api/kurv/); the customer's browser return is only a secondary
+ * confirmation, and a scheduled reconciliation sweep catches orders where
+ * neither signal arrived.
  *
  * @extends WC_Payment_Gateway
  * @since 1.0.0
  */
-class WC_Kurv extends WC_Payment_Gateway {
+class Kurv_Payments_Gateway extends WC_Payment_Gateway {
+
+	/**
+	 * Action Scheduler hook used to reconcile orders with no confirmed result.
+	 */
+	public const RECONCILE_HOOK = 'kurv_reconcile_order';
+
+	/**
+	 * Delays (in seconds) at which an unconfirmed order is re-checked against
+	 * the Kurv API: 10 minutes, 1 hour, then 6 hours.
+	 *
+	 * @var array<int,int>
+	 */
+	private const RECONCILE_DELAYS = [ 600, 3600, 21600 ];
 
 	/**
 	 * WooCommerce logger instance (lazy-initialised).
@@ -83,8 +98,14 @@ class WC_Kurv extends WC_Payment_Gateway {
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_admin_assets' ] );
 		add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, [ $this, 'process_admin_options' ] );
 		add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, [ $this, 'validate_admin_options' ] );
+		// Server-to-server payment callback: POST to /wc-api/kurv/. This is the
+		// authoritative result — it arrives whether or not the customer returns.
+		add_action( 'woocommerce_api_' . $this->id, [ $this, 'handle_payment_callback' ] );
 		// Gateway-specific thank-you hook — only fires for Kurv orders, not every order.
 		add_action( 'woocommerce_thankyou_' . $this->id, [ $this, 'response_page' ] );
+		// NOTE: the reconciliation hook is deliberately NOT registered here. Action
+		// Scheduler runs in contexts that never instantiate payment gateways, so it
+		// is bound once at file scope in kurv-woocommerce.php instead.
 		add_action( 'woocommerce_order_status_changed', [ $this, 'process_full_refund_on_status_change' ], 10, 3 );
 		add_action( 'woocommerce_order_status_changed', [ $this, 'add_full_refund_notes' ], 10, 3 );
 		add_filter( 'woocommerce_order_actions', [ $this, 'add_capture_order_action' ] );
@@ -101,8 +122,8 @@ class WC_Kurv extends WC_Payment_Gateway {
 				'type'        => 'title',
 				'description' => sprintf(
 					'<code style="display:block;padding:8px;background:#f6f7f7;border:1px solid #ddd;border-radius:3px;word-break:break-all;user-select:all;">%s</code><p class="description">%s</p>',
-					esc_url( wc_get_checkout_url() ),
-					esc_html__( 'This URL is automatically sent to Kurv with each payment request as the response_url. No manual configuration required.', 'kurv-payments-for-woocommerce' )
+					esc_url( self::get_callback_url() ),
+					esc_html__( 'Kurv posts each payment result back to this endpoint. It is sent automatically with every payment request as the response_url — no manual configuration required.', 'kurv-payments-for-woocommerce' )
 				),
 			],
 			'enabled'          => [
@@ -158,18 +179,11 @@ class WC_Kurv extends WC_Payment_Gateway {
 				'default'     => 'no',
 				'description' => __( 'By default, only WooCommerce sends a receipt. Enable this to also send a Kurv receipt. Note: the customer will receive two emails.', 'kurv-payments-for-woocommerce' ),
 			],
-			'payment_expiry_hours' => [
-				'title'       => __( 'Payment Link Expiry', 'kurv-payments-for-woocommerce' ),
-				'type'        => 'number',
-				'description' => __( 'Hours before a Kurv payment link expires. Leave blank for no expiry.', 'kurv-payments-for-woocommerce' ),
-				'default'     => '24',
-				'desc_tip'    => true,
-				'custom_attributes' => [
-					'min'  => '1',
-					'max'  => '720',
-					'step' => '1',
-				],
-			],
+			// NOTE: the payment link expiry field is intentionally not registered.
+			// The Kurv API rejects every documented expiry_date format we have tried
+			// (see get_payment_url()), so exposing the setting would promise behaviour
+			// the plugin cannot deliver. Restore both together once Kurv confirms the
+			// accepted format.
 			'payment_type'         => [
 				'title'       => __( 'Payment Type', 'kurv-payments-for-woocommerce' ),
 				'type'        => 'select',
@@ -242,8 +256,12 @@ class WC_Kurv extends WC_Payment_Gateway {
 		if ( 'woocommerce_page_wc-settings' !== $hook ) {
 			return;
 		}
+
+		// Read-only page-routing check on an admin screen; no state is changed here.
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		if ( ( $_GET['section'] ?? '' ) !== $this->id ) {
+		$section = isset( $_GET['section'] ) ? sanitize_text_field( wp_unslash( $_GET['section'] ) ) : '';
+
+		if ( $section !== $this->id ) {
 			return;
 		}
 
@@ -296,9 +314,17 @@ class WC_Kurv extends WC_Payment_Gateway {
 		);
 
 		wp_localize_script( 'kurv-checkout', 'kurv_checkout_params', [
-			'logoUrl'       => $base . 'assets/img/kurv-logo.svg',
-			'preparingText' => __( 'Preparing your secure payment…', 'kurv-payments-for-woocommerce' ),
-			'errorText'     => __( 'Something went wrong. Please try again.', 'kurv-payments-for-woocommerce' ),
+			'logoUrl'        => $base . 'assets/img/kurv-logo.svg',
+			'brandText'      => __( 'Kurv', 'kurv-payments-for-woocommerce' ),
+			'processingText' => __( 'Processing payment', 'kurv-payments-for-woocommerce' ),
+			'secureText'     => __( 'Secured by Kurv', 'kurv-payments-for-woocommerce' ),
+			'errorText'      => __( 'Something went wrong. Please try again.', 'kurv-payments-for-woocommerce' ),
+			'messages'       => [
+				__( 'Hang tight — building your secure payment page…', 'kurv-payments-for-woocommerce' ),
+				__( 'We know you’re in a hurry. Almost there…', 'kurv-payments-for-woocommerce' ),
+				__( 'Connecting you to Kurv…', 'kurv-payments-for-woocommerce' ),
+				__( 'Your payment page is being handcrafted…', 'kurv-payments-for-woocommerce' ),
+			],
 		] );
 	}
 
@@ -324,22 +350,82 @@ class WC_Kurv extends WC_Payment_Gateway {
 	}
 
 	/**
+	 * Load API credentials straight from the stored settings.
+	 *
+	 * Background jobs (Action Scheduler, WP-Cron) run in requests that never
+	 * instantiate payment gateways, so init_api() does not fire and Kurv_API
+	 * would otherwise authenticate with an empty key.
+	 */
+	public static function ensure_api_credentials(): void {
+		if ( '' !== Kurv_API::$access_key ) {
+			return;
+		}
+
+		$settings = get_option( 'woocommerce_kurv_settings', [] );
+		$is_test  = 'yes' === ( $settings['test_mode'] ?? 'no' );
+
+		Kurv_API::$is_test_mode = $is_test;
+		Kurv_API::$access_key   = (string) ( $is_test
+			? ( $settings['test_access_key'] ?? '' )
+			: ( $settings['live_access_key'] ?? '' ) );
+	}
+
+	/**
+	 * Return the server-to-server callback endpoint Kurv posts payment results to.
+	 *
+	 * Uses the WooCommerce API endpoint (/wc-api/kurv/) rather than the
+	 * order-received page, so the callback is handled by dedicated code that can
+	 * read a POST body — the thank-you page cannot.
+	 */
+	public static function get_callback_url(): string {
+		return WC()->api_request_url( 'kurv' );
+	}
+
+	/**
 	 * Generate a one-time token that ties a payment response to this order.
 	 *
-	 * The token is an HMAC-SHA256 hash (via wp_hash) of the order ID, currency,
-	 * transaction ID, and a per-order secret. It is appended to the redirect and
-	 * response URLs so we can verify the callback is genuine.
+	 * The token is an HMAC-SHA256 hash (via wp_hash) of the order ID and a
+	 * per-order secret, and is appended to both the redirect and response URLs so
+	 * we can verify a callback is genuine.
+	 *
+	 * The token deliberately depends only on values we already hold locally. An
+	 * earlier version mixed in the currency and transaction ID taken from the
+	 * callback payload, which meant a payload that omitted either field could
+	 * never be verified.
+	 *
+	 * @param int $order_id Order ID.
+	 * @return string Empty string if the order or its secret is unavailable.
+	 */
+	protected function generate_token( int $order_id ): string {
+		$order = wc_get_order( $order_id );
+
+		if ( ! $order ) {
+			return '';
+		}
+
+		$secret_key = (string) $order->get_meta( '_kurv_secret_key', true );
+
+		if ( '' === $secret_key ) {
+			return '';
+		}
+
+		return wp_hash( $order_id . '|' . $secret_key );
+	}
+
+	/**
+	 * Constant-time check that a supplied token matches the one for this order.
 	 *
 	 * @param int    $order_id Order ID.
-	 * @param string $currency ISO currency code.
-	 * @return string
+	 * @param string $token    Token supplied by the caller.
 	 */
-	protected function generate_token( int $order_id, string $currency ): string {
-		$order          = wc_get_order( $order_id );
-		$transaction_id = $order->get_meta( '_kurv_transaction_id', true );
-		$secret_key     = $order->get_meta( '_kurv_secret_key', true );
+	protected function verify_token( int $order_id, string $token ): bool {
+		$expected = $this->generate_token( $order_id );
 
-		return wp_hash( (string) $order_id . $currency . $transaction_id . $secret_key );
+		if ( '' === $expected || '' === $token ) {
+			return false;
+		}
+
+		return hash_equals( $expected, $token );
 	}
 
 	/**
@@ -354,10 +440,23 @@ class WC_Kurv extends WC_Payment_Gateway {
 		$order      = wc_get_order( $order_id );
 		$currency   = $order->get_currency();
 		$amount     = (float) $order->get_total();
-		$token      = $this->generate_token( $order_id, $currency );
+		$token      = $this->generate_token( $order_id );
 		$return_url = $this->get_return_url( $order );
 
-		$country_code_phone    = $this->get_country_code( $order->get_billing_country() );
+		// Browser return — the customer lands here after paying.
+		$redirect_url = add_query_arg( 'kurv_token', $token, $return_url );
+
+		// Server-to-server result callback. This carries the order ID explicitly
+		// because, unlike the redirect, it is not tied to a WooCommerce order page.
+		$response_url = add_query_arg(
+			[
+				'kurv_order_id' => $order_id,
+				'kurv_token'    => $token,
+			],
+			self::get_callback_url()
+		);
+
+		$country_code_phone    = self::get_country_code( $order->get_billing_country() );
 		$customer_phone_number = $order->get_billing_phone();
 
 		if ( $country_code_phone && str_starts_with( $customer_phone_number, $country_code_phone ) === false && strlen( $customer_phone_number ) <= 10 ) {
@@ -380,8 +479,8 @@ class WC_Kurv extends WC_Payment_Gateway {
 			'fixed_amount'        => true,
 			'send_confirmation'   => 'yes' === $this->get_option( 'kurv_send_receipt', 'no' ) ? 'true' : 'false',
 			'cancel_url'          => wc_get_checkout_url(),
-			'redirect_url'        => $return_url . '&kurv_token=' . $token,
-			'response_url'        => $return_url . '&kurv_token=' . $token,
+			'redirect_url'        => $redirect_url,
+			'response_url'        => $response_url,
 		];
 
 		// Add Apple Pay / Google Pay if enabled.
@@ -389,57 +488,65 @@ class WC_Kurv extends WC_Payment_Gateway {
 			$body['payment_methods'] = [ 'APPLE_PAY', 'GOOGLE_PAY' ];
 		}
 
-		// TODO: re-add expiry_date once Kurv confirms exact accepted format.
-		// Every format tried (YYYY-MM-DD HH:MM, ISO8601 with Z, ISO8601 with +00:00) is rejected
-		// by the API with "expiry_date is not in ISO 8601 format." — but docs say YYYY-MM-DD HH:MM.
-		// All successful requests in logs have no expiry_date field at all.
-		// The expiry hours setting is preserved in plugin settings for future use.
-		// $expiry_hours = (int) $this->get_option( 'payment_expiry_hours', 0 );
-		// if ( $expiry_hours > 0 ) {
-		// 	$expiry = new \DateTime( 'now', new \DateTimeZone( 'UTC' ) );
-		// 	$expiry->modify( '+' . $expiry_hours . ' hours' );
-		// 	$body['expiry_date'] = $expiry->format( 'Y-m-d H:i' );
-		// }
+		/*
+		 * expiry_date is deliberately omitted.
+		 *
+		 * Every documented format we have tried (YYYY-MM-DD HH:MM, ISO 8601 with Z,
+		 * ISO 8601 with +00:00) is rejected by the API with "expiry_date is not in
+		 * ISO 8601 format.", and every request that succeeds in the logs omits the
+		 * field entirely. The matching admin setting is unregistered in
+		 * init_form_fields() so the two stay in step — restore both once Kurv
+		 * confirms the accepted format.
+		 */
 
-		// Sync the customer to Kurv's CRM.
-		// Note: customer_id is intentionally not sent in the payment request body —
-		// the Kurv sandbox rejects it as invalid. Re-evaluate for production once confirmed with Kurv.
-		self::update_customer_on_kurv( $order );
+		// Sync the customer to Kurv's CRM. Queued, not inline: it costs up to two
+		// API calls and nothing in this request depends on the result — customer_id
+		// is intentionally not sent in the payment request body, because the Kurv
+		// sandbox rejects it as invalid. Re-evaluate once confirmed with Kurv.
+		self::queue_customer_sync( $order_id );
 
 		$log_body                 = $body;
-		$log_body['response_url'] = $return_url . '&kurv_token=*****';
+		$log_body['response_url'] = add_query_arg( 'kurv_token', '*****', self::get_callback_url() );
+		$log_body['redirect_url'] = add_query_arg( 'kurv_token', '*****', $return_url );
 		$this->log( 'get_payment_url - body: ' . wp_json_encode( $log_body ) );
 
 		$results = Kurv_API::generate_pos_link( $body );
 		$this->log( 'get_payment_url - results: ' . wp_json_encode( $results ) );
 
 		if ( is_wp_error( $results ) ) {
-			throw new \Exception( $results->get_error_message(), 1 );
+			throw new \Exception( esc_html( $results->get_error_message() ), 1 );
 		}
 
-		if ( 200 === $results['response']['code'] && 'success' === $results['body']['result'] ) {
-			// Store supplementary URLs on the order for admin reference.
+		$code = (int) ( $results['response']['code'] ?? 0 );
+		$data = is_array( $results['body'] ?? null ) ? $results['body'] : [];
+
+		if ( 200 === $code && 'success' === ( $data['result'] ?? '' ) && ! empty( $data['long_url'] ) ) {
+			// Store the Kurv-side identifiers so the order can be reconciled later
+			// even if no callback or browser return ever arrives.
 			$order = wc_get_order( $order_id );
-			$order->update_meta_data( '_kurv_short_url', $results['body']['short_url'] ?? '' );
-			$order->update_meta_data( '_kurv_qrcode_url', $results['body']['qrcode_link'] ?? '' );
+			$order->update_meta_data( '_kurv_short_url', $data['short_url'] ?? '' );
+			$order->update_meta_data( '_kurv_qrcode_url', $data['qrcode_link'] ?? '' );
+			$order->update_meta_data( '_kurv_request_id', $data['transaction_id'] ?? '' );
 			$order->save();
 
-			return $results['body']['long_url'];
+			$this->schedule_reconciliation( $order_id );
+
+			return (string) $data['long_url'];
 		}
 
-		if ( 422 === $results['response']['code'] && 'currency' === ( $results['body']['error_field'] ?? '' ) ) {
-			throw new \Exception( __( 'We are sorry, this currency is not supported. Please contact us.', 'kurv-payments-for-woocommerce' ), 1 );
+		if ( 422 === $code && 'currency' === ( $data['error_field'] ?? '' ) ) {
+			throw new \Exception( esc_html__( 'We are sorry, this currency is not supported. Please contact us.', 'kurv-payments-for-woocommerce' ), 1 );
 		}
 
-		if ( ! empty( $results['body']['error_message'] ) ) {
-			throw new \Exception( esc_html( $results['body']['error_message'] ), 1 );
+		if ( ! empty( $data['error_message'] ) ) {
+			throw new \Exception( esc_html( (string) $data['error_message'] ), 1 );
 		}
 
-		if ( ! empty( $results['body']['message'] ) ) {
-			throw new \Exception( esc_html( $results['body']['message'] ), 1 );
+		if ( ! empty( $data['message'] ) ) {
+			throw new \Exception( esc_html( (string) $data['message'] ), 1 );
 		}
 
-		throw new \Exception( __( 'Payment could not be initiated. Please try again.', 'kurv-payments-for-woocommerce' ), 1 );
+		throw new \Exception( esc_html__( 'Payment could not be initiated. Please try again.', 'kurv-payments-for-woocommerce' ), 1 );
 	}
 
 	/**
@@ -453,13 +560,16 @@ class WC_Kurv extends WC_Payment_Gateway {
 		$order      = wc_get_order( $order_id );
 
 		foreach ( $order->get_items() as $item ) {
-			$product    = $item->get_product();
-			$price      = $product->get_price();
-			$tax_rates  = WC_Tax::get_rates( $product->get_tax_class() );
-			$taxes      = WC_Tax::calc_tax( (float) $price, $tax_rates, false );
+			$product = $item->get_product();
+
+			// The product may have been deleted since the order was placed. Fall
+			// back to the line item's own data rather than fatalling on null.
+			$price      = $product ? (float) $product->get_price() : 0.0;
+			$tax_rates  = $product ? WC_Tax::get_rates( $product->get_tax_class() ) : [];
+			$taxes      = $tax_rates ? WC_Tax::calc_tax( $price, $tax_rates, false ) : [];
 			$total_tax  = array_sum( $taxes );
 			$is_taxable = 'taxable' === $item->get_tax_status();
-			$sku        = $product->get_sku() ?: '-';
+			$sku        = ( $product && $product->get_sku() ) ? $product->get_sku() : '-';
 			$item_total = isset( $item['recurring_line_total'] ) ? $item['recurring_line_total'] : $order->get_item_total( $item );
 
 			// Grab the first tax rate label to pass as tax_name.
@@ -469,10 +579,13 @@ class WC_Kurv extends WC_Payment_Gateway {
 				$tax_name   = $first_rate['label'] ?? '';
 			}
 
+			// Never sync a product inline here — that would put a blocking HTTP
+			// round trip (up to 70s) between the customer and their payment page.
+			// Queue it instead; the ID will be present on subsequent orders.
 			$kurv_product_id = get_post_meta( $item['product_id'], 'kurv_product_id', true );
 			if ( ! $kurv_product_id ) {
-				self::update_product_on_kurv( (int) $item['product_id'] );
-				$kurv_product_id = get_post_meta( $item['product_id'], 'kurv_product_id', true );
+				self::queue_product_sync( (int) $item['product_id'] );
+				$kurv_product_id = '';
 			}
 
 			$cart_items[] = [
@@ -536,8 +649,16 @@ class WC_Kurv extends WC_Payment_Gateway {
 			return false;
 		}
 
-		$payment_id = $order->get_meta( '_kurv_payment_id', true );
-		$body       = [
+		$payment_id = (string) $order->get_meta( '_kurv_payment_id', true );
+
+		if ( '' === $payment_id ) {
+			return new \WP_Error(
+				'kurv_no_payment_id',
+				__( 'Refund failed: this order has no Kurv payment ID, so the payment was never confirmed.', 'kurv-payments-for-woocommerce' )
+			);
+		}
+
+		$body = [
 			'email'  => $order->get_billing_email(),
 			'amount' => (float) $amount,
 		];
@@ -550,10 +671,13 @@ class WC_Kurv extends WC_Payment_Gateway {
 			return $results;
 		}
 
-		if ( 200 === $results['response']['code'] && 'refund' === $results['body']['status'] ) {
-			$ref_number      = $results['body']['ref_number'] ?? '';
-			$balance         = $results['body']['balance'] ?? null;
-			$refunded_amount = $results['body']['refunded_amount'] ?? $amount;
+		$code = (int) ( $results['response']['code'] ?? 0 );
+		$data = is_array( $results['body'] ?? null ) ? $results['body'] : [];
+
+		if ( 200 === $code && 'refund' === ( $data['status'] ?? '' ) ) {
+			$ref_number      = $data['ref_number'] ?? '';
+			$balance         = $data['balance'] ?? null;
+			$refunded_amount = $data['refunded_amount'] ?? $amount;
 
 			$order->update_meta_data( '_kurv_last_refund_ref', $ref_number );
 			$order->save();
@@ -578,8 +702,8 @@ class WC_Kurv extends WC_Payment_Gateway {
 
 		$this->log( 'process_refund: failed' );
 		return new \WP_Error(
-			(string) $results['response']['code'],
-			__( 'Refund failed', 'kurv-payments-for-woocommerce' ) . ': ' . ( $results['body']['message'] ?? '' )
+			'kurv_refund_failed_' . $code,
+			__( 'Refund failed', 'kurv-payments-for-woocommerce' ) . ': ' . ( $data['message'] ?? __( 'unknown error', 'kurv-payments-for-woocommerce' ) )
 		);
 	}
 
@@ -617,6 +741,7 @@ class WC_Kurv extends WC_Payment_Gateway {
 		if ( is_wp_error( $results ) ) {
 			$order->add_order_note(
 				sprintf(
+					/* translators: %s: error message returned by the Kurv API. */
 					__( 'Kurv full refund failed: %s', 'kurv-payments-for-woocommerce' ),
 					esc_html( $results->get_error_message() )
 				)
@@ -625,8 +750,11 @@ class WC_Kurv extends WC_Payment_Gateway {
 			return;
 		}
 
-		if ( 200 === $results['response']['code'] && 'refund' === $results['body']['status'] ) {
-			$ref_number = $results['body']['ref_number'] ?? '';
+		$code = (int) ( $results['response']['code'] ?? 0 );
+		$data = is_array( $results['body'] ?? null ) ? $results['body'] : [];
+
+		if ( 200 === $code && 'refund' === ( $data['status'] ?? '' ) ) {
+			$ref_number = $data['ref_number'] ?? '';
 			$order->update_meta_data( '_kurv_last_refund_ref', $ref_number );
 			$order->save();
 
@@ -640,8 +768,9 @@ class WC_Kurv extends WC_Payment_Gateway {
 		} else {
 			$order->add_order_note(
 				sprintf(
+					/* translators: %s: error message returned by the Kurv API. */
 					__( 'Kurv full refund failed: %s', 'kurv-payments-for-woocommerce' ),
-					esc_html( $results['body']['message'] ?? __( 'unknown error', 'kurv-payments-for-woocommerce' ) )
+					esc_html( $data['message'] ?? __( 'unknown error', 'kurv-payments-for-woocommerce' ) )
 				)
 			);
 			$this->log( 'process_full_refund: failed' );
@@ -783,74 +912,342 @@ class WC_Kurv extends WC_Payment_Gateway {
 	}
 
 	/**
-	 * Handle the payment response when the customer returns from Kurv.
+	 * Handle Kurv's server-to-server payment callback.
 	 *
-	 * Hooked to woocommerce_thankyou_kurv — only fires for Kurv orders.
+	 * Hooked to woocommerce_api_kurv, i.e. POST /wc-api/kurv/. Kurv sends the
+	 * result as a form field named "response" containing a JSON string. This is
+	 * the authoritative signal: it arrives whether or not the customer's browser
+	 * ever makes it back to the site.
+	 */
+	public function handle_payment_callback(): void {
+		// Authenticity is established by the per-order HMAC token in the URL,
+		// which is why there is no nonce here — Kurv is not a logged-in user and
+		// cannot hold one.
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended
+		$order_id = isset( $_REQUEST['kurv_order_id'] ) ? absint( wp_unslash( $_REQUEST['kurv_order_id'] ) ) : 0;
+		$token    = isset( $_REQUEST['kurv_token'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['kurv_token'] ) ) : '';
+		$raw      = isset( $_REQUEST['response'] ) ? wp_unslash( $_REQUEST['response'] ) : '';
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		$this->log( 'handle_payment_callback: order_id=' . $order_id );
+
+		if ( ! $order_id || ! $this->verify_token( $order_id, $token ) ) {
+			$this->log( 'handle_payment_callback: token mismatch or missing order — rejected', 'warning' );
+			status_header( 403 );
+			exit;
+		}
+
+		if ( ! is_string( $raw ) || '' === trim( $raw ) ) {
+			$this->log( 'handle_payment_callback: empty response payload', 'warning' );
+			status_header( 400 );
+			exit;
+		}
+
+		$response = json_decode( $raw, true );
+
+		if ( ! is_array( $response ) ) {
+			$this->log( 'handle_payment_callback: response payload was not valid JSON', 'warning' );
+			status_header( 400 );
+			exit;
+		}
+
+		$this->apply_payment_result( $order_id, $response, 'callback' );
+
+		status_header( 200 );
+		exit;
+	}
+
+	/**
+	 * Handle the customer's browser return from the hosted payment page.
+	 *
+	 * Hooked to woocommerce_thankyou_kurv — only fires for Kurv orders. This is a
+	 * best-effort secondary path: if the redirect carries a result we apply it,
+	 * but its absence proves nothing (the callback may simply have arrived first,
+	 * or be in flight), so an order is never failed from here.
 	 *
 	 * @param int $order_id Order ID.
 	 */
 	public function response_page( int $order_id ): void {
-		$token = get_query_var( 'kurv_token' );
+		$token = (string) get_query_var( 'kurv_token' );
 
-		if ( empty( $token ) ) {
-			$this->log( 'response_page: no token, skipping' );
+		if ( '' === $token ) {
 			return;
 		}
 
-		$this->log( 'response_page: processing payment response' );
+		if ( ! $this->verify_token( $order_id, $token ) ) {
+			$this->log( 'response_page: token mismatch — ignoring', 'warning' );
+			return;
+		}
 
-		$raw_response = get_query_var( 'response' );
-		$this->log( 'response_page - raw response: ' . $raw_response );
+		$raw = (string) get_query_var( 'response' );
 
-		$response = json_decode( wp_unslash( $raw_response ), true );
-		$this->log( 'response_page - decoded response: ' . wp_json_encode( $response ) );
+		if ( '' === trim( $raw ) ) {
+			// No result in the redirect. The server-to-server callback is
+			// authoritative and reconciliation will catch anything it misses, so
+			// leave the order exactly as it is.
+			$this->log( 'response_page: no result in redirect — deferring to callback' );
+			return;
+		}
 
-		$payment_status = $response['status'] ?? $response['result'] ?? '';
-		$result_code    = (int) ( $response['result_code'] ?? 0 );
-		$payment_id     = $response['payment_id'] ?? $response['response']['id'] ?? '';
-		$currency       = $response['currency'] ?? $response['response']['currency'] ?? '';
+		$response = json_decode( wp_unslash( $raw ), true );
 
-		$generated_token = $this->generate_token( $order_id, $currency );
-		$order           = wc_get_order( $order_id );
+		if ( ! is_array( $response ) ) {
+			$this->log( 'response_page: response payload was not valid JSON — deferring to callback', 'warning' );
+			return;
+		}
+
+		$this->apply_payment_result( $order_id, $response, 'redirect' );
+	}
+
+	/**
+	 * Apply a decoded Kurv payment result to an order.
+	 *
+	 * Idempotent: an order that has already been paid is left untouched, so the
+	 * callback and the browser return racing each other is harmless.
+	 *
+	 * @param int                 $order_id Order ID.
+	 * @param array<string,mixed> $response Decoded Kurv response payload.
+	 * @param string              $source   Where the result came from, for logs.
+	 */
+	protected function apply_payment_result( int $order_id, array $response, string $source ): void {
+		$order = wc_get_order( $order_id );
 
 		if ( ! $order || 'kurv' !== $order->get_payment_method() ) {
 			return;
 		}
 
-		if ( $token !== $generated_token ) {
-			$this->log( 'response_page: token mismatch — possible fraud attempt', 'warning' );
+		$this->log( $source . ' - decoded response: ' . wp_json_encode( $response ) );
+
+		if ( $order->is_paid() || 'on-hold' === $order->get_status() ) {
+			$this->log( $source . ': order ' . $order_id . ' already settled — ignoring duplicate result' );
 			return;
 		}
 
+		$payment_status = $response['status'] ?? $response['result'] ?? '';
+		$result_code    = (int) ( $response['result_code'] ?? 0 );
+		$payment_id     = (string) ( $response['payment_id'] ?? $response['response']['id'] ?? '' );
+
 		// result_code 100 = success per Kurv API docs. Check both for robustness.
 		if ( 'ACK' === $payment_status || 100 === $result_code ) {
-			$order->update_meta_data( '_kurv_payment_id', $payment_id );
-			$order->update_meta_data( '_kurv_payment_result', 'success' );
+			$this->complete_order_payment( $order, $payment_id, $source );
+			return;
+		}
 
-			if ( 'PA' === $this->payment_type ) {
-				$this->log( 'response_page: PA — setting order to on-hold (capture required)' );
-				$order->update_status( 'on-hold', __( 'Kurv payment pre-authorised. Capture required.', 'kurv-payments-for-woocommerce' ) );
-			} else {
-				$order_status = 'completed';
-				foreach ( $order->get_items() as $order_item ) {
-					$item = wc_get_product( $order_item->get_product_id() );
-					if ( $item && ! $item->is_virtual() ) {
-						$order_status = 'processing';
-						break;
-					}
-				}
-				$this->log( 'response_page: updating order status to ' . $order_status );
-				$order->update_status( $order_status, __( 'Kurv payment successful.', 'kurv-payments-for-woocommerce' ) );
+		$this->log( $source . ': payment not acknowledged, marking order ' . $order_id . ' failed' );
+
+		$order->update_meta_data( '_kurv_payment_result', 'failed' );
+		$order->save();
+		$order->update_status(
+			'failed',
+			__( 'Kurv payment failed.', 'kurv-payments-for-woocommerce' ) . ' ' . esc_html( (string) ( $response['result_description'] ?? '' ) )
+		);
+
+		$this->cancel_reconciliation( $order_id );
+	}
+
+	/**
+	 * Mark an order as paid (or pre-authorised) following a successful result.
+	 *
+	 * @param \WC_Order $order      Order to settle.
+	 * @param string    $payment_id Kurv payment ID.
+	 * @param string    $source     Where the result came from, for logs.
+	 */
+	protected function complete_order_payment( \WC_Order $order, string $payment_id, string $source ): void {
+		$order->update_meta_data( '_kurv_payment_id', $payment_id );
+		$order->update_meta_data( '_kurv_payment_result', 'success' );
+
+		if ( 'PA' === $this->payment_type ) {
+			$this->log( $source . ': PA — setting order to on-hold (capture required)' );
+			$order->set_transaction_id( $payment_id );
+			$order->save();
+			$order->update_status( 'on-hold', __( 'Kurv payment pre-authorised. Capture required.', 'kurv-payments-for-woocommerce' ) );
+		} else {
+			$this->log( $source . ': completing payment for order ' . $order->get_id() );
+			$order->add_order_note( __( 'Kurv payment successful.', 'kurv-payments-for-woocommerce' ) );
+			$order->save();
+
+			// payment_complete() records the paid date and transaction ID, reduces
+			// stock, picks the right status for the cart contents, and fires
+			// woocommerce_payment_complete for other extensions. Setting the status
+			// by hand — as this plugin used to — skips all of that.
+			$order->payment_complete( $payment_id );
+		}
+
+		$this->cancel_reconciliation( $order->get_id() );
+	}
+
+	/**
+	 * Queue the first reconciliation check for an order awaiting payment.
+	 *
+	 * @param int $order_id Order ID.
+	 * @param int $attempt  Zero-based index into self::RECONCILE_DELAYS.
+	 */
+	protected function schedule_reconciliation( int $order_id, int $attempt = 0 ): void {
+		if ( ! function_exists( 'as_schedule_single_action' ) ) {
+			return;
+		}
+
+		if ( ! isset( self::RECONCILE_DELAYS[ $attempt ] ) ) {
+			return;
+		}
+
+		as_schedule_single_action(
+			time() + self::RECONCILE_DELAYS[ $attempt ],
+			self::RECONCILE_HOOK,
+			[ 'order_id' => $order_id ],
+			'kurv'
+		);
+	}
+
+	/**
+	 * Drop any pending reconciliation checks for an order that has now settled.
+	 *
+	 * @param int $order_id Order ID.
+	 */
+	protected function cancel_reconciliation( int $order_id ): void {
+		if ( function_exists( 'as_unschedule_all_actions' ) ) {
+			as_unschedule_all_actions( self::RECONCILE_HOOK, [ 'order_id' => $order_id ], 'kurv' );
+		}
+	}
+
+	/**
+	 * Ask Kurv directly whether an unresolved order was in fact paid.
+	 *
+	 * This is the safety net for the case where neither the server-to-server
+	 * callback nor the customer's browser return reached us — otherwise the
+	 * customer is charged and the order sits in pending forever.
+	 *
+	 * Deliberately one-directional: it can only move an order forward to paid. A
+	 * lookup that comes back negative or unrecognised is treated as "not yet
+	 * known", never as a failure, because the alternative risks failing an order
+	 * that was actually paid.
+	 *
+	 * @param int $order_id Order ID.
+	 */
+	public function reconcile_order( int $order_id ): void {
+		$order = wc_get_order( $order_id );
+
+		if ( ! $order || 'kurv' !== $order->get_payment_method() ) {
+			return;
+		}
+
+		// Anything other than a still-awaiting-payment order is already resolved.
+		if ( ! in_array( $order->get_status(), [ 'pending', 'failed' ], true ) ) {
+			return;
+		}
+
+		$attempt    = (int) $order->get_meta( '_kurv_reconcile_attempt', true );
+		$payment_id = (string) $order->get_meta( '_kurv_payment_id', true );
+		$request_id = (string) $order->get_meta( '_kurv_request_id', true );
+
+		$this->log( sprintf( 'reconcile_order: order=%d attempt=%d', $order_id, $attempt ) );
+
+		if ( '' !== $payment_id ) {
+			$results = Kurv_API::get_payment( $payment_id );
+		} elseif ( '' !== $request_id ) {
+			$results = Kurv_API::get_payment_request( $request_id );
+		} else {
+			$this->log( 'reconcile_order: no Kurv identifier on order ' . $order_id . ' — cannot reconcile', 'warning' );
+			return;
+		}
+
+		$order->update_meta_data( '_kurv_reconcile_attempt', $attempt + 1 );
+		$order->save();
+
+		if ( is_wp_error( $results ) ) {
+			$this->log( 'reconcile_order: lookup failed — ' . $results->get_error_message(), 'warning' );
+			$this->schedule_reconciliation( $order_id, $attempt + 1 );
+			return;
+		}
+
+		$this->log( 'reconcile_order - results: ' . wp_json_encode( $results ) );
+
+		$body       = is_array( $results['body'] ?? null ) ? $results['body'] : [];
+		$confirmed  = $this->extract_confirmed_payment_id( $body );
+
+		if ( null !== $confirmed ) {
+			$this->log( 'reconcile_order: confirmed paid, settling order ' . $order_id );
+			$order->add_order_note( __( 'Kurv payment confirmed by scheduled status check (no callback was received).', 'kurv-payments-for-woocommerce' ) );
+			$this->complete_order_payment( $order, '' !== $confirmed ? $confirmed : $payment_id, 'reconcile' );
+			return;
+		}
+
+		// Not confirmed. Try again later; give up quietly once attempts run out.
+		$this->schedule_reconciliation( $order_id, $attempt + 1 );
+	}
+
+	/**
+	 * Pull a confirmed-paid payment ID out of a Kurv status lookup response.
+	 *
+	 * The payment-request and payment endpoints nest their data differently, so
+	 * this checks the shapes we have observed. Returns null unless the response
+	 * explicitly indicates success — an unrecognised shape must never be read as
+	 * a payment.
+	 *
+	 * @param array<string,mixed> $body Decoded response body.
+	 * @return string|null Payment ID (possibly an empty string) when paid, else null.
+	 */
+	protected function extract_confirmed_payment_id( array $body ): ?string {
+		$candidates = [ $body, $body['payment'] ?? null, $body['payment_request'] ?? null ];
+
+		foreach ( $candidates as $node ) {
+			if ( ! is_array( $node ) ) {
+				continue;
 			}
 
-			$order->save();
-		} else {
-			$this->log( 'response_page: payment not acknowledged, marking failed' );
+			$status = strtoupper( (string) ( $node['status'] ?? $node['payment_status'] ?? '' ) );
+			$code   = (int) ( $node['result_code'] ?? 0 );
 
-			$order->update_meta_data( '_kurv_payment_result', 'failed' );
-			$order->update_status( 'failed', __( 'Kurv payment failed.', 'kurv-payments-for-woocommerce' ) );
-			$order->save();
+			if ( in_array( $status, [ 'ACK', 'PAID', 'COMPLETED', 'SUCCESS', 'SETTLED' ], true ) || 100 === $code ) {
+				return (string) ( $node['payment_id'] ?? $node['id'] ?? '' );
+			}
 		}
+
+		return null;
+	}
+
+	/**
+	 * Queue a product sync instead of running it inline.
+	 *
+	 * Product saves and checkout both used to make blocking API calls on the
+	 * request thread; Action Scheduler moves them to the background.
+	 *
+	 * @param int $product_id WooCommerce product ID.
+	 */
+	public static function queue_product_sync( int $product_id ): void {
+		if ( ! function_exists( 'as_enqueue_async_action' ) ) {
+			// Action Scheduler unavailable (WooCommerce not fully loaded) — fall
+			// back to a direct call so the sync still happens.
+			self::update_product_on_kurv( $product_id );
+			return;
+		}
+
+		if ( as_has_scheduled_action( 'kurv_do_product_sync', [ 'product_id' => $product_id ], 'kurv' ) ) {
+			return;
+		}
+
+		as_enqueue_async_action( 'kurv_do_product_sync', [ 'product_id' => $product_id ], 'kurv' );
+	}
+
+	/**
+	 * Queue a customer sync for an order instead of running it inline.
+	 *
+	 * @param int $order_id WooCommerce order ID.
+	 */
+	public static function queue_customer_sync( int $order_id ): void {
+		if ( ! function_exists( 'as_enqueue_async_action' ) ) {
+			$order = wc_get_order( $order_id );
+			if ( $order ) {
+				self::update_customer_on_kurv( $order );
+			}
+			return;
+		}
+
+		if ( as_has_scheduled_action( 'kurv_do_customer_sync', [ 'order_id' => $order_id ], 'kurv' ) ) {
+			return;
+		}
+
+		as_enqueue_async_action( 'kurv_do_customer_sync', [ 'order_id' => $order_id ], 'kurv' );
 	}
 
 	/**
@@ -859,9 +1256,18 @@ class WC_Kurv extends WC_Payment_Gateway {
 	 * @param int $product_id WooCommerce product ID.
 	 */
 	public static function update_product_on_kurv( int $product_id ): void {
-		$product      = wc_get_product( $product_id );
+		self::ensure_api_credentials();
+
+		$product = wc_get_product( $product_id );
+
+		// This now runs asynchronously, so the product may have been deleted
+		// between the save that queued the sync and this job running.
+		if ( ! $product ) {
+			return;
+		}
+
 		$product_image = wp_get_attachment_image_src( get_post_thumbnail_id( $product_id ), 'single-post-thumbnail' );
-		$category_id  = self::check_and_create_product_category( $product_id );
+		$category_id   = self::check_and_create_product_category( $product_id );
 
 		$data = [
 			'name'             => $product->get_name(),
@@ -927,13 +1333,15 @@ class WC_Kurv extends WC_Payment_Gateway {
 	 * @return string|null Kurv customer ID, or null on failure.
 	 */
 	public static function update_customer_on_kurv( \WC_Order $order ): ?string {
+		self::ensure_api_credentials();
+
 		$check = Kurv_API::customers( $order->get_billing_email() );
 
 		if ( is_wp_error( $check ) || 200 !== $check['response']['code'] || 'success' !== $check['body']['result'] ) {
 			return null;
 		}
 
-		$country_code_phone    = ( new self() )->get_country_code( $order->get_billing_country() );
+		$country_code_phone    = self::get_country_code( $order->get_billing_country() );
 		$customer_phone_number = $order->get_billing_phone();
 
 		if ( $country_code_phone && ! str_starts_with( $customer_phone_number, $country_code_phone ) && strlen( $customer_phone_number ) <= 10 ) {
@@ -974,10 +1382,15 @@ class WC_Kurv extends WC_Payment_Gateway {
 	/**
 	 * Return the international dialling prefix for a given ISO 3166-1 alpha-2 country code.
 	 *
+	 * Static because it is a pure lookup. It previously was not, which forced
+	 * update_customer_on_kurv() to build a throwaway gateway instance on every
+	 * checkout — and each instance re-ran the constructor, registering a second
+	 * copy of every hook (including the refund handlers).
+	 *
 	 * @param string $country_code Two-letter country code (e.g. 'US').
 	 * @return string|null Prefix including leading '+', or null if not found.
 	 */
-	public function get_country_code( string $country_code ): ?string {
+	public static function get_country_code( string $country_code ): ?string {
 		$country_phone_codes = [
 			'AF' => '+93',
 			'AL' => '+355',

@@ -1,1 +1,22 @@
+# macOS
 .DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Editors
+.idea/
+.vscode/
+*.sublime-*
+
+# Dependencies / build
+node_modules/
+vendor/
+*.log
+.env
+
+# Distribution archives — WordPress.org rejects any hidden file in the zip,
+# so always build the release zip from a clean export (see readme "Building a release").
+/build/
+/dist/
+*.zip

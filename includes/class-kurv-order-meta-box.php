@@ -26,19 +26,39 @@ class Kurv_Order_Meta_Box {
 	 * Register hooks.
 	 */
 	public static function init(): void {
-		// Classic post-based order screen.
+		// Registers on both the classic and HPOS order screens — see register().
 		add_action( 'add_meta_boxes', [ __CLASS__, 'register' ] );
-		// HPOS order screen.
-		add_action( 'woocommerce_order_details_after_order_table', [ __CLASS__, 'maybe_render_hpos' ] );
+		add_action( 'admin_enqueue_scripts', [ __CLASS__, 'enqueue_styles' ] );
+	}
+
+	/**
+	 * Enqueue the meta box stylesheet on order screens only.
+	 *
+	 * @param string $hook Current admin page hook.
+	 */
+	public static function enqueue_styles( string $hook ): void {
+		if ( ! in_array( $hook, [ 'post.php', 'post-new.php', 'woocommerce_page_wc-orders' ], true ) ) {
+			return;
+		}
+
+		wp_enqueue_style(
+			'kurv-admin',
+			plugin_dir_url( dirname( __FILE__ ) ) . 'assets/css/kurv-admin.css',
+			[],
+			KURV_PLUGIN_VERSION
+		);
 	}
 
 	/**
 	 * Register the meta box for the classic order edit screen.
 	 */
 	public static function register(): void {
-		$screen = wc_get_container()->get( \Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController::class )->custom_orders_table_usage_is_enabled()
-			? wc_get_page_screen_id( 'shop-order' )
-			: 'shop_order';
+		// OrderUtil is WooCommerce's public API for this; the CustomOrdersTableController
+		// this used to reach for lives under \Internal\ and carries no compatibility promise.
+		$hpos_enabled = class_exists( '\Automattic\WooCommerce\Utilities\OrderUtil' )
+			&& \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
+
+		$screen = $hpos_enabled ? wc_get_page_screen_id( 'shop-order' ) : 'shop_order';
 
 		add_meta_box(
 			'kurv-order-details',
@@ -65,27 +85,15 @@ class Kurv_Order_Meta_Box {
 			return;
 		}
 
-		$payment_id  = $order->get_meta( '_kurv_payment_id', true );
-		$short_url   = $order->get_meta( '_kurv_short_url', true );
-		$qrcode_url  = $order->get_meta( '_kurv_qrcode_url', true );
-		$refund_ref  = $order->get_meta( '_kurv_last_refund_ref', true );
-		$result      = $order->get_meta( '_kurv_payment_result', true );
-		$is_test     = 'yes' === get_option( 'woocommerce_kurv_settings' )['test_mode'] ?? false;
+		$payment_id = $order->get_meta( '_kurv_payment_id', true );
+		$short_url  = $order->get_meta( '_kurv_short_url', true );
+		$qrcode_url = $order->get_meta( '_kurv_qrcode_url', true );
+		$refund_ref = $order->get_meta( '_kurv_last_refund_ref', true );
+		$result     = $order->get_meta( '_kurv_payment_result', true );
 
-		$settings   = get_option( 'woocommerce_kurv_settings', [] );
-		$is_test    = 'yes' === ( $settings['test_mode'] ?? 'no' );
+		$settings = get_option( 'woocommerce_kurv_settings', [] );
+		$is_test  = 'yes' === ( $settings['test_mode'] ?? 'no' );
 		?>
-		<style>
-			.kurv-meta-box { font-size: 13px; }
-			.kurv-meta-box table { width: 100%; border-collapse: collapse; }
-			.kurv-meta-box td { padding: 5px 0; vertical-align: top; }
-			.kurv-meta-box td:first-child { color: #666; width: 42%; }
-			.kurv-meta-box .kurv-badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
-			.kurv-meta-box .kurv-badge-success { background: #d1fae5; color: #065f46; }
-			.kurv-meta-box .kurv-badge-failed  { background: #fee2e2; color: #991b1b; }
-			.kurv-meta-box .kurv-badge-test    { background: #fef3c7; color: #92400e; }
-			.kurv-meta-box .kurv-mono { font-family: monospace; font-size: 11px; word-break: break-all; }
-		</style>
 		<div class="kurv-meta-box">
 			<table>
 				<?php if ( $is_test ) : ?>
@@ -143,11 +151,4 @@ class Kurv_Order_Meta_Box {
 		<?php
 	}
 
-	/**
-	 * Fallback render for HPOS if the meta box registration fails.
-	 * Not used on standard installs — the meta box registration handles it.
-	 */
-	public static function maybe_render_hpos( \WC_Order $order ): void {
-		// Intentionally empty — HPOS uses the same add_meta_box registration above.
-	}
 }

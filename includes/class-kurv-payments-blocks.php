@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * WC_Kurv_Blocks — WooCommerce Blocks payment method integration.
+ * Kurv_Payments_Blocks — WooCommerce Blocks payment method integration.
  *
  * @package Kurv
  */
@@ -22,36 +22,55 @@ use Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodTyp
  *
  * @since 1.0.0
  */
-final class WC_Kurv_Blocks extends AbstractPaymentMethodType {
+final class Kurv_Payments_Blocks extends AbstractPaymentMethodType {
 
 	/**
 	 * Cached gateway instance used to check availability and read settings.
 	 *
-	 * @var WC_Kurv
+	 * @var Kurv_Payments_Gateway|null
 	 */
-	private WC_Kurv $gateway;
+	private ?Kurv_Payments_Gateway $gateway = null;
 
 	/**
-	 * Must exactly match the gateway ID declared in WC_Kurv::$id.
+	 * Must exactly match the gateway ID declared in Kurv_Payments_Gateway::$id.
 	 *
 	 * @var string
 	 */
 	protected $name = 'kurv';
 
 	/**
-	 * Load settings and instantiate the gateway for availability checks.
+	 * Load settings for the blocks integration.
 	 */
 	public function initialize(): void {
 		$this->settings         = get_option( 'woocommerce_kurv_settings', [] );
-		$this->gateway          = new WC_Kurv();
 		$this->settings['icon'] = plugin_dir_url( dirname( __FILE__ ) ) . 'assets/img/kurv-logo.svg';
+	}
+
+	/**
+	 * Return the gateway, preferring WooCommerce's own registered instance.
+	 *
+	 * Constructing a gateway directly registers a second copy of every hook its
+	 * constructor adds, so the shared instance is used wherever one exists.
+	 */
+	private function get_gateway(): Kurv_Payments_Gateway {
+		if ( $this->gateway instanceof Kurv_Payments_Gateway ) {
+			return $this->gateway;
+		}
+
+		$registered = WC()->payment_gateways()->payment_gateways()['kurv'] ?? null;
+
+		$this->gateway = $registered instanceof Kurv_Payments_Gateway
+			? $registered
+			: new Kurv_Payments_Gateway();
+
+		return $this->gateway;
 	}
 
 	/**
 	 * Whether the Kurv gateway is available for the current cart/customer.
 	 */
 	public function is_active(): bool {
-		return $this->gateway->is_available();
+		return $this->get_gateway()->is_available();
 	}
 
 	/**
@@ -94,9 +113,11 @@ final class WC_Kurv_Blocks extends AbstractPaymentMethodType {
 	 * @return array<string,mixed>
 	 */
 	public function get_payment_method_data(): array {
+		$gateway = $this->get_gateway();
+
 		return [
-			'title'       => $this->gateway->title,
-			'description' => $this->gateway->description,
+			'title'       => $gateway->title,
+			'description' => $gateway->description,
 			'icon'        => $this->settings['icon'] ?? '',
 			'supports'    => $this->get_supported_features(),
 		];

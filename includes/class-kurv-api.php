@@ -17,11 +17,16 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Authentication is Bearer-token based. Merchants enter their API key in the
  * WooCommerce gateway settings; this class receives it via the static
- * $access_key property set by WC_Kurv::init_api().
+ * $access_key property set by Kurv_Payments_Gateway::init_api().
  *
  * @since 1.0.0
  */
 class Kurv_API {
+
+	/**
+	 * Maximum number of requests (initial attempt plus retries) per call.
+	 */
+	private const MAX_ATTEMPTS = 3;
 
 	/**
 	 * API access key (Bearer token), set from gateway settings.
@@ -62,7 +67,7 @@ class Kurv_API {
 	 * Send an authenticated request to the Kurv API.
 	 *
 	 * Automatically retries on 429 (rate limit) responses using exponential
-	 * backoff: 1s → 2s → 4s, up to 3 attempts total.
+	 * backoff: 1s then 2s, up to 3 requests total.
 	 *
 	 * Returns a WP_Error on network/transport failure. Callers must check
 	 * is_wp_error() before accessing the response body.
@@ -93,9 +98,11 @@ class Kurv_API {
 			return $response;
 		}
 
-		// Retry on 429 (rate limited) with exponential backoff: 1s, 2s, 4s.
-		if ( 429 === (int) wp_remote_retrieve_response_code( $response ) && $attempt <= 3 ) {
-			sleep( (int) pow( 2, $attempt - 1 ) );
+		// Retry on 429 (rate limited) with exponential backoff: 1s then 2s.
+		// Capped at 3 requests total — this can run on the checkout thread, so the
+		// worst case has to stay bounded.
+		if ( 429 === (int) wp_remote_retrieve_response_code( $response ) && $attempt < self::MAX_ATTEMPTS ) {
+			sleep( 2 ** ( $attempt - 1 ) );
 			return self::send_request( $url, $body, $method, $attempt + 1 );
 		}
 
@@ -123,6 +130,18 @@ class Kurv_API {
 	 */
 	public static function get_payment( string $payment_id ): array|\WP_Error {
 		return self::send_request( self::get_api_url() . '/payments/' . rawurlencode( $payment_id ) );
+	}
+
+	/**
+	 * Retrieve a payment request by its Kurv transaction ID.
+	 *
+	 * Used to reconcile orders where no payment ID was ever recorded because
+	 * neither the callback nor the browser return reached us.
+	 *
+	 * @return array<mixed>|\WP_Error
+	 */
+	public static function get_payment_request( string $transaction_id ): array|\WP_Error {
+		return self::send_request( self::get_api_url() . '/payment-requests/' . rawurlencode( $transaction_id ) );
 	}
 
 	/**
