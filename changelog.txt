@@ -1,7 +1,8 @@
-= 1.0.0 — 2026-08-13 =
+= 1.0.1 — 2026-08-13 =
 
-Pre-release hardening ahead of WordPress.org approval. Applied to the 1.0.0
-submission rather than versioned separately, as 1.0.0 has not been published.
+Hardening ahead of WordPress.org approval: clears every finding in the Plugin
+Check report and fixes several correctness bugs in the payment path. 1.0.0 was
+submitted but never published, so no store is running it.
 
 Payment reliability:
 * Fixed: the payment result is now received on a dedicated server-to-server
