@@ -74,12 +74,32 @@ jobs:
   plugin-check:
     name: WordPress.org Plugin Check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # lets the action post its findings on the PR
     steps:
       - uses: actions/checkout@v4
 
+      # Check the package we would actually submit, not the working tree. The
+      # working tree contains .github and .gitignore, which are export-ignored
+      # and so never ship — checking it directly reports hidden-file findings
+      # that do not exist in the real artifact.
+      - name: Build release package
+        run: |
+          mkdir -p build
+          git archive --format=tar --prefix=kurv-payments-for-woocommerce/ HEAD \
+            | tar -x -C build
+          ls -la build/kurv-payments-for-woocommerce
+
       # Runs the same tool the WordPress.org reviewers run, including the
       # readme "Tested up to" freshness check.
+      #
+      # slug is set explicitly: the action otherwise infers it from the
+      # repository name (kurv-woocommerce), while the WordPress.org slug is
+      # kurv-payments-for-woocommerce. Without this every translated string is
+      # reported as a text domain mismatch.
       - name: Run Plugin Check
         uses: wordpress/plugin-check-action@v1
         with:
-          build-dir: '.'
+          build-dir: build/kurv-payments-for-woocommerce
+          slug: kurv-payments-for-woocommerce

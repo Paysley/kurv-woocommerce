@@ -926,7 +926,16 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended
 		$order_id = isset( $_REQUEST['kurv_order_id'] ) ? absint( wp_unslash( $_REQUEST['kurv_order_id'] ) ) : 0;
 		$token    = isset( $_REQUEST['kurv_token'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['kurv_token'] ) ) : '';
-		$raw      = isset( $_REQUEST['response'] ) ? wp_unslash( $_REQUEST['response'] ) : '';
+
+		/*
+		 * The payload is a JSON document, so it is unslashed but not passed
+		 * through a string sanitiser: sanitize_text_field() and friends strip
+		 * characters that are legal inside JSON and would corrupt it. It is
+		 * instead validated by json_decode() below, and every value read out of
+		 * it is cast to a scalar type in apply_payment_result() before use.
+		 */
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$raw = isset( $_REQUEST['response'] ) ? wp_unslash( $_REQUEST['response'] ) : '';
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 
 		$this->log( 'handle_payment_callback: order_id=' . $order_id );
