@@ -4,7 +4,7 @@ Tags: woocommerce, payment, gateway, kurv
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 1.0.1
+Stable tag: 1.0.2
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -70,6 +70,10 @@ at https://kurv.com for how that data is handled.
 See changelog.txt for full version history.
 
 == Upgrade Notice ==
+= 1.0.2 =
+Required for live payments. The live API hostname was wrong, so checkout failed
+for every store using a live API key. Test/sandbox mode was unaffected.
+
 = 1.0.1 =
 Recommended for anyone running 1.0.0. Fixes payment results not being recorded
 when a customer closes their browser on the payment page, and adds a scheduled

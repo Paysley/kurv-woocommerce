@@ -45,9 +45,13 @@ class Kurv_API {
 	/**
 	 * Live API base URL.
 	 *
+	 * Was https://live.kurv.app, which has no DNS record at all — live mode
+	 * could never connect and every checkout failed with
+	 * "cURL error 6: Could not resolve host".
+	 *
 	 * @var string
 	 */
-	public static string $api_live_url = 'https://live.kurv.app';
+	public static string $api_live_url = 'https://api.kurv.app';
 
 	/**
 	 * Sandbox API base URL.

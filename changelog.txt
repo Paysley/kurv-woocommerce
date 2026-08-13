@@ -1,3 +1,10 @@
+= 1.0.2 — 2026-08-13 =
+
+* Fixed: the live API base URL was https://live.kurv.app, a hostname with no DNS
+  record. Live mode could never connect — every checkout on a live API key
+  failed with "cURL error 6: Could not resolve host: live.kurv.app". The live
+  base URL is now https://api.kurv.app. Sandbox was unaffected.
+
 = 1.0.1 — 2026-08-13 =
 
 Hardening ahead of WordPress.org approval: clears every finding in the Plugin
