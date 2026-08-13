@@ -1,0 +1,5 @@
+# Keep development-only and hidden files out of `git archive` release builds.
+# WordPress.org's Plugin Check rejects a package containing any hidden file,
+# .gitignore included.
+/.gitignore     export-ignore
+/.gitattributes export-ignore
