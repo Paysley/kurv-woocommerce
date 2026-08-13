@@ -1,0 +1,85 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint and coding standards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # The plugin's declared minimum. Anything that parses here parses on
+          # every supported version.
+          php-version: '8.1'
+          coverage: none
+          tools: composer
+
+      - name: PHP syntax check
+        run: find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
+
+      - name: Install PHP_CodeSniffer and WordPress standards
+        run: |
+          composer global config --no-plugins allow-plugins.dealerdirect/phpcodesniffer-composer-installer true
+          composer global require --no-interaction --no-progress \
+            dealerdirect/phpcodesniffer-composer-installer:^1.0 \
+            wp-coding-standards/wpcs:^3.1 \
+            phpcompatibility/phpcompatibility-wp:^2.1
+          echo "$(composer global config bin-dir --absolute)" >> "$GITHUB_PATH"
+
+      - name: WordPress.org Plugin Check sniffs
+        run: |
+          phpcs --standard=WordPress-Core,WordPress-Extra \
+            --sniffs=WordPress.Security.EscapeOutput,WordPress.Security.ValidatedSanitizedInput,WordPress.WP.I18n,WordPress.NamingConventions.PrefixAllGlobals,WordPress.Security.NonceVerification,WordPress.Files.FileName \
+            --runtime-set prefixes kurv \
+            --runtime-set text_domain kurv-payments-for-woocommerce \
+            --extensions=php .
+
+      - name: PHP 8.1+ compatibility
+        run: phpcs --standard=PHPCompatibilityWP --runtime-set testVersion 8.1- --extensions=php .
+
+      - name: JavaScript syntax check
+        run: find . -name '*.js' -not -path './.git/*' -print0 | xargs -0 -n1 node --check
+
+  package:
+    name: Release package is clean
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # WordPress.org rejects a package containing any hidden file. This is the
+      # check that would have caught the .DS_Store rejection before submission.
+      - name: Build release archive and assert no hidden files
+        run: |
+          git archive --format=zip \
+            --prefix=kurv-payments-for-woocommerce/ \
+            -o /tmp/plugin.zip HEAD
+          echo "Package contents:"
+          unzip -l /tmp/plugin.zip
+          if unzip -l /tmp/plugin.zip | grep -E '/\.[^/]+$'; then
+            echo "::error::Release archive contains hidden files. Add them to .gitattributes as export-ignore."
+            exit 1
+          fi
+          echo "No hidden files in the release archive."
+
+  plugin-check:
+    name: WordPress.org Plugin Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Runs the same tool the WordPress.org reviewers run, including the
+      # readme "Tested up to" freshness check.
+      - name: Run Plugin Check
+        uses: wordpress/plugin-check-action@v1
+        with:
+          build-dir: '.'
