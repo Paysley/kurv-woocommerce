@@ -1,9 +1,17 @@
 /* global kurv_settings */
 const settings = window.kurv_settings || {};
-const label = window.wp.htmlEntities.decodeEntities( settings.title ) || window.wp.i18n.__( 'Kurv', 'kurv-woocommerce' );
+const label = window.wp.htmlEntities.decodeEntities( settings.title ) || window.wp.i18n.__( 'Kurv', 'kurv-payments-for-woocommerce' );
 
+// Rendered as HTML rather than a plain string: the description can carry the
+// card fee disclosure, which emphasises the amount that will be charged. Returned
+// as a string, React would escape the markup and show the tags literally.
+// The value is sanitised server-side with wp_kses_post().
 const Content = () => {
-	return window.wp.htmlEntities.decodeEntities( settings.description || '' );
+	return window.wp.element.createElement(
+		window.wp.element.RawHTML,
+		null,
+		settings.description || ''
+	);
 };
 
 // Render icon + title inline, or fall back to plain text label if no icon is set.

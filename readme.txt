@@ -2,9 +2,9 @@
 Contributors: kurv
 Tags: woocommerce, payment, gateway, kurv
 Requires at least: 6.0
-Tested up to: 6.9
+Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 1.0.0
+Stable tag: 1.0.6
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -18,9 +18,14 @@ and the new Cart & Checkout blocks.
 = Key Features =
 * Secure hosted payment page — no card data touches your server
 * Live and test (sandbox) mode with separate API keys
-* Partial and full refunds from WooCommerce admin
+* Optional card fee disclosure at checkout for accounts using dual pricing
+* Refunds handled in the Kurv portal, or optionally from WooCommerce admin
+* Optional pre-authorisation with manual capture from the order screen
+* Optional Apple Pay and Google Pay on the hosted payment page
 * WooCommerce Blocks (Gutenberg checkout) support
 * HPOS (High-Performance Order Storage) compatible
+* Server-to-server payment confirmation, so orders complete even if the
+  customer closes their browser on the payment page
 * Transaction logging for debugging
 
 = Requirements =
@@ -43,12 +48,79 @@ Log in to the Kurv developer portal and navigate to API Keys.
 = Does this support WooCommerce Blocks checkout? =
 Yes. The plugin is fully compatible with the WooCommerce Cart & Checkout blocks.
 
-= Does this support refunds? =
-Yes. Partial and full refunds are supported from the WooCommerce order screen.
+= What happens if a customer closes their browser after paying? =
+The order still completes. Kurv confirms every payment to the plugin with a
+server-to-server callback, independently of the customer's browser. As a further
+safety net the plugin re-checks any order that is still awaiting payment against
+the Kurv API after 10 minutes, 1 hour and 6 hours.
+
+= Do I need to configure a webhook or callback URL? =
+No. The plugin sends its own callback URL with every payment request. The URL is
+shown at the top of the Kurv settings screen for reference.
+
+= My Kurv account uses dual pricing. Will the fee show at checkout? =
+Enable "Show card fee at checkout" and set the percentage to match your Kurv
+account. The customer then sees the base price, the card fee and the total they
+will be charged, before paying.
+
+The percentage is used for display only. Kurv applies dual pricing itself when
+the payment is processed, so the plugin never adds the fee to the amount it
+submits — doing both would charge the fee twice. After payment succeeds, the
+order total is updated to the amount Kurv reports as charged, so the order,
+the customer's confirmation email and your reports all match.
+
+= Can I refund from WooCommerce? =
+By default, no. "Manage refunds in Kurv" is enabled, which hides WooCommerce's
+Refund button and makes marking an order Refunded a record-keeping action only.
+This is the safe default: refunding in the Kurv portal and then updating the
+WooCommerce record would otherwise send a second refund. Turn the setting off to
+refund through WooCommerce instead.
+
+= Can I change the API host or timeout? =
+Yes, with two filters:
+
+`kurv_api_base_url` — receives the base URL and whether sandbox mode is active.
+Use it to point a store at a different Kurv host without editing the plugin.
+
+`kurv_api_timeout` — receives the timeout in seconds (20 by default) and the
+endpoint being called. Raise it only if a server genuinely needs longer; these
+calls can run while a customer waits at checkout.
+
+= Which data is sent to Kurv? =
+Kurv is the payment processor for your store, so completing a purchase sends the
+order total and currency, the billing name, email address, phone number and
+address, and the line items in the order. See the Kurv privacy policy and terms
+at https://kurv.com for how that data is handled.
 
 == Changelog ==
 See changelog.txt for full version history.
 
 == Upgrade Notice ==
+= 1.0.6 =
+Makes the amount that will be charged more prominent in the card fee disclosure.
+
+= 1.0.5 =
+Fixes the card fee disclosure not appearing at checkout on themes that override
+the checkout totals template.
+
+= 1.0.4 =
+Important if you refund in the Kurv portal: marking an order Refunded in
+WooCommerce could previously send a second refund to Kurv. Also adds optional
+card fee disclosure at checkout for accounts using dual pricing.
+
+= 1.0.3 =
+Recommended. Cuts the API timeout so a slow response cannot hold checkout open
+for minutes, stops customer contact details being written to the debug log, and
+hardens handling of unexpected API responses.
+
+= 1.0.2 =
+Required for live payments. The live API hostname was wrong, so checkout failed
+for every store using a live API key. Test/sandbox mode was unaffected.
+
+= 1.0.1 =
+Recommended for anyone running 1.0.0. Fixes payment results not being recorded
+when a customer closes their browser on the payment page, and adds a scheduled
+check that confirms unresolved orders against the Kurv API.
+
 = 1.0.0 =
 Initial release.

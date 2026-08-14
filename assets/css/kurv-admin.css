@@ -1,0 +1,53 @@
+/* ==========================================================================
+   Kurv Payment meta box (WooCommerce order edit screen)
+   ========================================================================== */
+
+.kurv-meta-box {
+    font-size: 13px;
+}
+
+.kurv-meta-box table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.kurv-meta-box td {
+    padding: 5px 0;
+    vertical-align: top;
+}
+
+.kurv-meta-box td:first-child {
+    color: #666;
+    width: 42%;
+}
+
+.kurv-meta-box .kurv-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+}
+
+.kurv-meta-box .kurv-badge-success {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.kurv-meta-box .kurv-badge-failed {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.kurv-meta-box .kurv-badge-test {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.kurv-meta-box .kurv-mono {
+    font-family: monospace;
+    font-size: 11px;
+    word-break: break-all;
+}

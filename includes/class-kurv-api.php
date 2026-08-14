@@ -17,11 +17,29 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Authentication is Bearer-token based. Merchants enter their API key in the
  * WooCommerce gateway settings; this class receives it via the static
- * $access_key property set by WC_Kurv::init_api().
+ * $access_key property set by Kurv_Payments_Gateway::init_api().
  *
  * @since 1.0.0
  */
 class Kurv_API {
+
+	/**
+	 * Maximum number of requests (initial attempt plus retries) per call.
+	 */
+	private const MAX_ATTEMPTS = 3;
+
+	/**
+	 * Default HTTP timeout, in seconds.
+	 *
+	 * Deliberately modest: these calls can run on the checkout thread, where a
+	 * slow API must not hold a customer's browser open indefinitely. This was
+	 * previously 70s, which in the worst case (with retries) left a shopper
+	 * staring at a spinner for over three minutes.
+	 *
+	 * Override per-site with the kurv_api_timeout filter if a merchant's
+	 * connection genuinely needs longer.
+	 */
+	private const DEFAULT_TIMEOUT = 20;
 
 	/**
 	 * API access key (Bearer token), set from gateway settings.
@@ -40,9 +58,13 @@ class Kurv_API {
 	/**
 	 * Live API base URL.
 	 *
+	 * Was https://live.kurv.app, which has no DNS record at all — live mode
+	 * could never connect and every checkout failed with
+	 * "cURL error 6: Could not resolve host".
+	 *
 	 * @var string
 	 */
-	public static string $api_live_url = 'https://live.kurv.app';
+	public static string $api_live_url = 'https://api.kurv.app';
 
 	/**
 	 * Sandbox API base URL.
@@ -53,16 +75,56 @@ class Kurv_API {
 
 	/**
 	 * Return the active API base URL based on mode.
+	 *
+	 * Filterable so a site can be repointed at a different host without waiting
+	 * for a plugin release — which is exactly what was needed when the documented
+	 * live hostname turned out not to exist.
+	 *
+	 *     add_filter( 'kurv_api_base_url', function ( $url, $is_test ) {
+	 *         return $is_test ? $url : 'https://api.kurv.app';
+	 *     }, 10, 2 );
 	 */
 	public static function get_api_url(): string {
-		return self::$is_test_mode ? self::$api_test_url : self::$api_live_url;
+		$url = self::$is_test_mode ? self::$api_test_url : self::$api_live_url;
+
+		/**
+		 * Filters the Kurv API base URL.
+		 *
+		 * @param string $url          Base URL, no trailing slash.
+		 * @param bool   $is_test_mode Whether sandbox mode is active.
+		 */
+		$url = (string) apply_filters( 'kurv_api_base_url', $url, self::$is_test_mode );
+
+		return untrailingslashit( $url );
+	}
+
+	/**
+	 * Normalise an API result into a [ status code, decoded body ] pair.
+	 *
+	 * Callers previously reached straight into $result['response']['code'] and
+	 * $result['body']['...']. When the API returned a non-JSON body — a gateway
+	 * error page, an HTML 502, an empty response — json_decode() yielded null and
+	 * those reads emitted PHP warnings on a live checkout page.
+	 *
+	 * @param array<mixed>|\WP_Error $result Raw result from send_request().
+	 * @return array{0:int,1:array<string,mixed>} Code (0 on transport failure) and body (empty array if not an object).
+	 */
+	public static function unpack( array|\WP_Error $result ): array {
+		if ( is_wp_error( $result ) ) {
+			return [ 0, [] ];
+		}
+
+		$code = (int) ( $result['response']['code'] ?? 0 );
+		$body = is_array( $result['body'] ?? null ) ? $result['body'] : [];
+
+		return [ $code, $body ];
 	}
 
 	/**
 	 * Send an authenticated request to the Kurv API.
 	 *
 	 * Automatically retries on 429 (rate limit) responses using exponential
-	 * backoff: 1s → 2s → 4s, up to 3 attempts total.
+	 * backoff: 1s then 2s, up to 3 requests total.
 	 *
 	 * Returns a WP_Error on network/transport failure. Callers must check
 	 * is_wp_error() before accessing the response body.
@@ -74,10 +136,18 @@ class Kurv_API {
 	 * @return array<mixed>|\WP_Error
 	 */
 	public static function send_request( string $url, array|string $body = '', string $method = 'GET', int $attempt = 1 ): array|\WP_Error {
+		/**
+		 * Filters the HTTP timeout, in seconds, for Kurv API requests.
+		 *
+		 * @param int    $timeout Timeout in seconds.
+		 * @param string $url     Endpoint being called.
+		 */
+		$timeout = (int) apply_filters( 'kurv_api_timeout', self::DEFAULT_TIMEOUT, $url );
+
 		$api_args = [
 			'headers' => [ 'Authorization' => 'Bearer ' . self::$access_key ],
 			'method'  => strtoupper( $method ),
-			'timeout' => 70,
+			'timeout' => max( 1, $timeout ),
 		];
 
 		if ( 'POST' === $method || 'PUT' === $method ) {
@@ -93,9 +163,11 @@ class Kurv_API {
 			return $response;
 		}
 
-		// Retry on 429 (rate limited) with exponential backoff: 1s, 2s, 4s.
-		if ( 429 === (int) wp_remote_retrieve_response_code( $response ) && $attempt <= 3 ) {
-			sleep( (int) pow( 2, $attempt - 1 ) );
+		// Retry on 429 (rate limited) with exponential backoff: 1s then 2s.
+		// Capped at 3 requests total — this can run on the checkout thread, so the
+		// worst case has to stay bounded.
+		if ( 429 === (int) wp_remote_retrieve_response_code( $response ) && $attempt < self::MAX_ATTEMPTS ) {
+			sleep( 2 ** ( $attempt - 1 ) );
 			return self::send_request( $url, $body, $method, $attempt + 1 );
 		}
 
@@ -123,6 +195,18 @@ class Kurv_API {
 	 */
 	public static function get_payment( string $payment_id ): array|\WP_Error {
 		return self::send_request( self::get_api_url() . '/payments/' . rawurlencode( $payment_id ) );
+	}
+
+	/**
+	 * Retrieve a payment request by its Kurv transaction ID.
+	 *
+	 * Used to reconcile orders where no payment ID was ever recorded because
+	 * neither the callback nor the browser return reached us.
+	 *
+	 * @return array<mixed>|\WP_Error
+	 */
+	public static function get_payment_request( string $transaction_id ): array|\WP_Error {
+		return self::send_request( self::get_api_url() . '/payment-requests/' . rawurlencode( $transaction_id ) );
 	}
 
 	/**
