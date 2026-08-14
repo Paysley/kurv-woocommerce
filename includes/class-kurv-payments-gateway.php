@@ -54,6 +54,15 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 	private bool $enable_logging;
 
 	/**
+	 * Whether the card fee rows were printed into the checkout totals.
+	 *
+	 * The totals template renders before the payment methods, so by the time the
+	 * gateway description is filtered this reliably says whether the fee has
+	 * already been disclosed — which is how the fallback avoids duplicating it.
+	 */
+	private bool $card_fee_rows_rendered = false;
+
+	/**
 	 * Whether sandbox/test mode is active.
 	 */
 	private bool $is_test_mode;
@@ -116,6 +125,9 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 		// Card fee disclosure on the classic checkout. Display only — see
 		// render_card_fee_rows(); nothing here alters the cart or order total.
 		add_action( 'woocommerce_review_order_after_order_total', [ $this, 'render_card_fee_rows' ] );
+		// Fallback for themes whose checkout/review-order.php override drops the
+		// hook above. Renders after it, and only if it produced nothing.
+		add_filter( 'woocommerce_gateway_description', [ $this, 'filter_gateway_description' ], 10, 2 );
 		add_action( 'woocommerce_order_status_changed', [ $this, 'process_full_refund_on_status_change' ], 10, 3 );
 		add_action( 'woocommerce_order_status_changed', [ $this, 'add_full_refund_notes' ], 10, 3 );
 		add_filter( 'woocommerce_order_actions', [ $this, 'add_capture_order_action' ] );
@@ -576,38 +588,73 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 			</td>
 		</tr>
 		<?php
+		// Tells filter_gateway_description() the fee is already disclosed, so it
+		// does not repeat it further down the page.
+		$this->card_fee_rows_rendered = true;
 	}
 
 	/**
-	 * Append the card fee disclosure to the gateway description.
+	 * The card fee disclosure as a single sentence, or '' if not applicable.
 	 *
-	 * This is what carries the disclosure on the block checkout, where custom
-	 * total rows are not straightforward to inject. Computed per request from the
-	 * live cart so the figures are the customer's real ones.
+	 * Computed per request from the live cart, so the figures are the customer's
+	 * own rather than an example.
 	 */
-	public function get_description_with_card_fee(): string {
-		$description = (string) $this->description;
-
+	public function get_card_fee_notice(): string {
 		if ( ! $this->card_fee_display_enabled() || ! WC()->cart ) {
-			return $description;
+			return '';
 		}
 
-		$base    = (float) WC()->cart->get_total( 'edit' );
-		$figures = $this->calculate_card_fee_display( $base );
+		$figures = $this->calculate_card_fee_display( (float) WC()->cart->get_total( 'edit' ) );
 
 		if ( $figures['fee'] <= 0 ) {
-			return $description;
+			return '';
 		}
 
-		$notice = sprintf(
+		return sprintf(
 			/* translators: 1: fee percentage, 2: fee amount, 3: total including the fee. */
 			__( 'A card fee of %1$s%% (%2$s) applies to card payments, so the amount charged will be %3$s.', 'kurv-payments-for-woocommerce' ),
 			wc_format_localized_decimal( $figures['percentage'] ),
 			wp_strip_all_tags( wc_price( $figures['fee'] ) ),
 			wp_strip_all_tags( wc_price( $figures['total'] ) )
 		);
+	}
 
-		return trim( $description . ' ' . $notice );
+	/**
+	 * Append the card fee disclosure to the gateway description.
+	 *
+	 * Used by the block checkout integration, where injecting custom total rows
+	 * is not straightforward.
+	 */
+	public function get_description_with_card_fee(): string {
+		$description = (string) $this->description;
+		$notice      = $this->get_card_fee_notice();
+
+		return '' === $notice ? $description : trim( $description . ' ' . $notice );
+	}
+
+	/**
+	 * Fallback disclosure in the gateway description on the classic checkout.
+	 *
+	 * The totals rows are the preferred presentation, but they depend on the
+	 * woocommerce_review_order_after_order_total hook, which a theme that ships
+	 * its own checkout/review-order.php can omit entirely. A fee disclosure must
+	 * not be able to disappear because of a template override, so if the rows did
+	 * not render, the sentence goes here instead.
+	 *
+	 * Only one of the two ever appears: the totals template runs before the
+	 * payment methods, so $card_fee_rows_rendered is already settled.
+	 *
+	 * @param string $description Existing description.
+	 * @param string $gateway_id  Gateway the description belongs to.
+	 */
+	public function filter_gateway_description( $description, $gateway_id ): string {
+		if ( $gateway_id !== $this->id || $this->card_fee_rows_rendered ) {
+			return (string) $description;
+		}
+
+		$notice = $this->get_card_fee_notice();
+
+		return '' === $notice ? (string) $description : trim( $description . ' ' . $notice );
 	}
 
 	/**

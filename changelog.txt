@@ -1,3 +1,15 @@
+= 1.0.5 — 2026-08-14 =
+
+* Fixed: the card fee disclosure could fail to appear at checkout. The totals
+  rows rely on the woocommerce_review_order_after_order_total hook, which a theme
+  shipping its own checkout/review-order.php can omit — and a fee disclosure must
+  not vanish because of a template override. If the rows do not render, the
+  disclosure now appears in the payment method description instead. Only one of
+  the two is ever shown: the totals template runs before the payment methods, so
+  the plugin knows by then whether the rows appeared.
+* Fixed: readme claimed refunds are performed from WooCommerce admin, which
+  stopped being the default in 1.0.4.
+
 = 1.0.4 — 2026-08-14 =
 
 Dual pricing disclosure, and a refund safety fix.

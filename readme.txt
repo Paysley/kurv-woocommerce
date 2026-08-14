@@ -4,7 +4,7 @@ Tags: woocommerce, payment, gateway, kurv
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 1.0.4
+Stable tag: 1.0.5
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -18,7 +18,8 @@ and the new Cart & Checkout blocks.
 = Key Features =
 * Secure hosted payment page — no card data touches your server
 * Live and test (sandbox) mode with separate API keys
-* Partial and full refunds from WooCommerce admin
+* Optional card fee disclosure at checkout for accounts using dual pricing
+* Refunds handled in the Kurv portal, or optionally from WooCommerce admin
 * Optional pre-authorisation with manual capture from the order screen
 * Optional Apple Pay and Google Pay on the hosted payment page
 * WooCommerce Blocks (Gutenberg checkout) support
@@ -46,9 +47,6 @@ Log in to the Kurv developer portal and navigate to API Keys.
 
 = Does this support WooCommerce Blocks checkout? =
 Yes. The plugin is fully compatible with the WooCommerce Cart & Checkout blocks.
-
-= Does this support refunds? =
-Yes. Partial and full refunds are supported from the WooCommerce order screen.
 
 = What happens if a customer closes their browser after paying? =
 The order still completes. Kurv confirms every payment to the plugin with a
@@ -98,6 +96,10 @@ at https://kurv.com for how that data is handled.
 See changelog.txt for full version history.
 
 == Upgrade Notice ==
+= 1.0.5 =
+Fixes the card fee disclosure not appearing at checkout on themes that override
+the checkout totals template.
+
 = 1.0.4 =
 Important if you refund in the Kurv portal: marking an order Refunded in
 WooCommerce could previously send a second refund to Kurv. Also adds optional
