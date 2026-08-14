@@ -116,8 +116,11 @@ final class Kurv_Payments_Blocks extends AbstractPaymentMethodType {
 		$gateway = $this->get_gateway();
 
 		return [
-			'title'       => $gateway->title,
-			'description' => $gateway->description,
+			'title' => $gateway->title,
+			// Carries the dual pricing disclosure on the block checkout, where
+			// injecting custom total rows is not straightforward. Computed from
+			// the live cart, so the customer sees their own figures.
+			'description' => $gateway->get_description_with_card_fee(),
 			'icon'        => $this->settings['icon'] ?? '',
 			'supports'    => $this->get_supported_features(),
 		];

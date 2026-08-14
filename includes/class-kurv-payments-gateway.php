@@ -91,6 +91,13 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 			? $this->get_option( 'test_access_key', '' )
 			: $this->get_option( 'live_access_key', '' );
 
+		// Withdraw refund support when the merchant manages refunds in Kurv, so
+		// WooCommerce does not offer a button that must not be used. Must come
+		// after init_settings(), which is what makes get_option() work.
+		if ( $this->refunds_managed_in_kurv() ) {
+			$this->supports = [ 'products' ];
+		}
+
 		$this->init_api();
 
 		add_filter( 'woocommerce_gateway_icon', [ $this, 'filter_icon_html' ], 10, 2 );
@@ -106,6 +113,9 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 		// NOTE: the reconciliation hook is deliberately NOT registered here. Action
 		// Scheduler runs in contexts that never instantiate payment gateways, so it
 		// is bound once at file scope in kurv-woocommerce.php instead.
+		// Card fee disclosure on the classic checkout. Display only — see
+		// render_card_fee_rows(); nothing here alters the cart or order total.
+		add_action( 'woocommerce_review_order_after_order_total', [ $this, 'render_card_fee_rows' ] );
 		add_action( 'woocommerce_order_status_changed', [ $this, 'process_full_refund_on_status_change' ], 10, 3 );
 		add_action( 'woocommerce_order_status_changed', [ $this, 'add_full_refund_notes' ], 10, 3 );
 		add_filter( 'woocommerce_order_actions', [ $this, 'add_capture_order_action' ] );
@@ -194,6 +204,54 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 					'PA' => __( 'PA — Pre-authorisation (capture manually)', 'kurv-payments-for-woocommerce' ),
 				],
 				'desc_tip'    => true,
+			],
+			'dual_pricing_title'   => [
+				'title'       => __( 'Dual Pricing / Card Fee', 'kurv-payments-for-woocommerce' ),
+				'type'        => 'title',
+				'description' => __( 'If your Kurv merchant account has dual pricing enabled, Kurv adds the card fee itself when the payment is processed. These settings only control what the customer is <strong>shown</strong> at checkout — the percentage below is never added to the amount sent to Kurv, because that would apply the fee twice.', 'kurv-payments-for-woocommerce' ),
+			],
+			'card_fee_enabled'     => [
+				'title'       => __( 'Show card fee at checkout', 'kurv-payments-for-woocommerce' ),
+				'label'       => __( 'Display the card price alongside the base price', 'kurv-payments-for-woocommerce' ),
+				'type'        => 'checkbox',
+				'default'     => 'no',
+				'description' => __( 'Enable this if dual pricing is active on your Kurv account. Card scheme rules and some jurisdictions require the fee to be disclosed before the customer pays.', 'kurv-payments-for-woocommerce' ),
+			],
+			'card_fee_percentage'  => [
+				'title'             => __( 'Card fee percentage', 'kurv-payments-for-woocommerce' ),
+				'type'              => 'text',
+				'description'       => __( 'Must match the percentage configured on your Kurv merchant account. Display only — it is not added to the amount charged.', 'kurv-payments-for-woocommerce' ),
+				'default'           => '3',
+				'placeholder'       => '3',
+				'desc_tip'          => true,
+				'custom_attributes' => [
+					'inputmode' => 'decimal',
+				],
+			],
+			'card_fee_label'       => [
+				'title'       => __( 'Card fee label', 'kurv-payments-for-woocommerce' ),
+				'type'        => 'text',
+				'description' => __( 'Wording shown for the fee line. Use whatever your compliance requirements specify.', 'kurv-payments-for-woocommerce' ),
+				'default'     => __( 'Card processing fee', 'kurv-payments-for-woocommerce' ),
+				'desc_tip'    => true,
+			],
+			'card_total_label'     => [
+				'title'       => __( 'Card total label', 'kurv-payments-for-woocommerce' ),
+				'type'        => 'text',
+				'description' => __( 'Wording shown for the total the customer will actually be charged.', 'kurv-payments-for-woocommerce' ),
+				'default'     => __( 'Total if paying by card', 'kurv-payments-for-woocommerce' ),
+				'desc_tip'    => true,
+			],
+			'refunds_title'        => [
+				'title' => __( 'Refunds', 'kurv-payments-for-woocommerce' ),
+				'type'  => 'title',
+			],
+			'refunds_in_kurv'      => [
+				'title'       => __( 'Manage refunds in Kurv', 'kurv-payments-for-woocommerce' ),
+				'label'       => __( 'Refunds and voids are handled in the Kurv portal, not in WooCommerce', 'kurv-payments-for-woocommerce' ),
+				'type'        => 'checkbox',
+				'default'     => 'yes',
+				'description' => __( 'Recommended when dual pricing is enabled. WooCommerce hides its Refund button, and marking an order Refunded becomes a record-keeping action only — it will not send a refund to Kurv. Disable this to refund through WooCommerce instead.', 'kurv-payments-for-woocommerce' ),
 			],
 			'enable_logging'   => [
 				'title'   => __( 'Enable Logging', 'kurv-payments-for-woocommerce' ),
@@ -408,6 +466,148 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 		}
 
 		$this->log( $label . ': ' . wp_json_encode( $this->redact_for_log( $payload ) ), $level );
+	}
+
+	/**
+	 * Whether refunds and voids are handled in the Kurv portal.
+	 */
+	public function refunds_managed_in_kurv(): bool {
+		return 'yes' === $this->get_option( 'refunds_in_kurv', 'yes' );
+	}
+
+	/**
+	 * Whether the card fee should be disclosed at checkout.
+	 */
+	public function card_fee_display_enabled(): bool {
+		return 'yes' === $this->get_option( 'card_fee_enabled', 'no' )
+			&& $this->get_card_fee_percentage() > 0;
+	}
+
+	/**
+	 * The configured card fee percentage.
+	 *
+	 * Used exclusively to render disclosure text. It is deliberately never added
+	 * to any amount sent to Kurv: dual pricing is applied account-side and cannot
+	 * be suppressed per-request, so adding it here would surcharge the surcharge.
+	 */
+	public function get_card_fee_percentage(): float {
+		return (float) str_replace( ',', '.', (string) $this->get_option( 'card_fee_percentage', '0' ) );
+	}
+
+	/**
+	 * Work out the card fee and card-inclusive total for a given base amount.
+	 *
+	 * Purely a presentation calculation — the return value is formatted for
+	 * display and never written to a cart, an order, or an API request.
+	 *
+	 * @param float $base Base amount (the price before the card fee).
+	 * @return array{fee:float,total:float,percentage:float}
+	 */
+	public function calculate_card_fee_display( float $base ): array {
+		$percentage = $this->get_card_fee_percentage();
+		$fee        = round( $base * ( $percentage / 100 ), wc_get_price_decimals() );
+
+		return [
+			'fee'        => $fee,
+			'total'      => round( $base + $fee, wc_get_price_decimals() ),
+			'percentage' => $percentage,
+		];
+	}
+
+	/**
+	 * Whether Kurv is the payment method the customer currently has selected.
+	 *
+	 * Falls back to true when nothing is selected yet and Kurv is the only
+	 * gateway available, which is the common single-gateway store — otherwise the
+	 * disclosure would be missing on first paint.
+	 */
+	protected function is_chosen_gateway(): bool {
+		$chosen = WC()->session ? (string) WC()->session->get( 'chosen_payment_method' ) : '';
+
+		if ( '' !== $chosen ) {
+			return $this->id === $chosen;
+		}
+
+		$available = WC()->payment_gateways() ? WC()->payment_gateways()->get_available_payment_gateways() : [];
+
+		return [ $this->id ] === array_keys( $available );
+	}
+
+	/**
+	 * Print the card fee disclosure rows beneath the classic checkout totals.
+	 *
+	 * Hooked to woocommerce_review_order_after_order_total. Emits table rows
+	 * only; it does not call WC_Cart::add_fee(), because that would raise the
+	 * cart total and therefore the amount submitted to Kurv.
+	 */
+	public function render_card_fee_rows(): void {
+		if ( ! $this->card_fee_display_enabled() || ! WC()->cart ) {
+			return;
+		}
+
+		// Only disclose the card fee while Kurv is the selected gateway, so the
+		// rows do not appear next to some other payment method's total. The
+		// review block is re-rendered over AJAX when the selection changes.
+		if ( ! $this->is_chosen_gateway() ) {
+			return;
+		}
+
+		$base   = (float) WC()->cart->get_total( 'edit' );
+		$figures = $this->calculate_card_fee_display( $base );
+
+		if ( $figures['fee'] <= 0 ) {
+			return;
+		}
+
+		$fee_label   = (string) $this->get_option( 'card_fee_label', __( 'Card processing fee', 'kurv-payments-for-woocommerce' ) );
+		$total_label = (string) $this->get_option( 'card_total_label', __( 'Total if paying by card', 'kurv-payments-for-woocommerce' ) );
+		$percentage  = wc_format_localized_decimal( $figures['percentage'] );
+		?>
+		<tr class="kurv-card-fee">
+			<th><?php echo esc_html( sprintf( '%s (%s%%)', $fee_label, $percentage ) ); ?></th>
+			<td data-title="<?php echo esc_attr( $fee_label ); ?>">
+				<?php echo wp_kses_post( wc_price( $figures['fee'] ) ); ?>
+			</td>
+		</tr>
+		<tr class="kurv-card-total order-total">
+			<th><?php echo esc_html( $total_label ); ?></th>
+			<td data-title="<?php echo esc_attr( $total_label ); ?>">
+				<strong><?php echo wp_kses_post( wc_price( $figures['total'] ) ); ?></strong>
+			</td>
+		</tr>
+		<?php
+	}
+
+	/**
+	 * Append the card fee disclosure to the gateway description.
+	 *
+	 * This is what carries the disclosure on the block checkout, where custom
+	 * total rows are not straightforward to inject. Computed per request from the
+	 * live cart so the figures are the customer's real ones.
+	 */
+	public function get_description_with_card_fee(): string {
+		$description = (string) $this->description;
+
+		if ( ! $this->card_fee_display_enabled() || ! WC()->cart ) {
+			return $description;
+		}
+
+		$base    = (float) WC()->cart->get_total( 'edit' );
+		$figures = $this->calculate_card_fee_display( $base );
+
+		if ( $figures['fee'] <= 0 ) {
+			return $description;
+		}
+
+		$notice = sprintf(
+			/* translators: 1: fee percentage, 2: fee amount, 3: total including the fee. */
+			__( 'A card fee of %1$s%% (%2$s) applies to card payments, so the amount charged will be %3$s.', 'kurv-payments-for-woocommerce' ),
+			wc_format_localized_decimal( $figures['percentage'] ),
+			wp_strip_all_tags( wc_price( $figures['fee'] ) ),
+			wp_strip_all_tags( wc_price( $figures['total'] ) )
+		);
+
+		return trim( $description . ' ' . $notice );
 	}
 
 	/**
@@ -794,6 +994,23 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 			return;
 		}
 
+		/*
+		 * When refunds are managed in Kurv, marking an order Refunded is a
+		 * bookkeeping action and must not send anything to the API.
+		 *
+		 * Without this, the natural workflow — refund in the Kurv portal, then
+		 * tidy up the WooCommerce record — issued a second, full-value refund.
+		 * There is no duplicate-refund guard on this endpoint, and a partial
+		 * refund in Kurv would have been followed by a full refund here.
+		 */
+		if ( $this->refunds_managed_in_kurv() ) {
+			$order->add_order_note(
+				__( 'Order marked Refunded. No refund was sent to Kurv, because refunds are managed in the Kurv portal. Confirm the refund there if you have not already.', 'kurv-payments-for-woocommerce' )
+			);
+			$this->log( 'process_full_refund: skipped — refunds are managed in Kurv' );
+			return;
+		}
+
 		$amount     = (float) $order->get_total();
 		$payment_id = $order->get_meta( '_kurv_payment_id', true );
 		$body       = [
@@ -1106,9 +1323,11 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 		$payment_status = $response['status'] ?? $response['result'] ?? '';
 		$result_code    = (int) ( $response['result_code'] ?? 0 );
 		$payment_id     = (string) ( $response['payment_id'] ?? $response['response']['id'] ?? '' );
+		$charged        = (float) ( $response['amount'] ?? $response['response']['amount'] ?? 0 );
 
 		// result_code 100 = success per Kurv API docs. Check both for robustness.
 		if ( 'ACK' === $payment_status || 100 === $result_code ) {
+			$this->reconcile_card_fee( $order, $charged, $source );
 			$this->complete_order_payment( $order, $payment_id, $source );
 			return;
 		}
@@ -1123,6 +1342,82 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 		);
 
 		$this->cancel_reconciliation( $order_id );
+	}
+
+	/**
+	 * Bring the order total up to the amount Kurv actually charged.
+	 *
+	 * With dual pricing enabled, Kurv adds the card fee account-side and it
+	 * cannot be suppressed per request, so the plugin submits the base amount and
+	 * the customer is charged more than the order says. Left alone, the order,
+	 * the customer's confirmation email and every revenue report understate the
+	 * sale by the fee.
+	 *
+	 * The fee line is built from the amount reported by Kurv, never from the
+	 * configured percentage. That keeps this exact for any percentage and any
+	 * rounding rule, and means the display setting can never influence money.
+	 *
+	 * Runs before payment_complete() so the confirmation email shows the real
+	 * total. Guarded by a meta flag, so a callback and a browser return arriving
+	 * together cannot add the fee twice.
+	 *
+	 * @param \WC_Order $order   Order being settled.
+	 * @param float     $charged Amount Kurv reports as charged.
+	 * @param string    $source  Where the result came from, for logs.
+	 */
+	protected function reconcile_card_fee( \WC_Order $order, float $charged, string $source ): void {
+		if ( $charged <= 0 || $order->get_meta( '_kurv_fee_reconciled', true ) ) {
+			return;
+		}
+
+		$order_total = (float) $order->get_total();
+		$difference  = round( $charged - $order_total, wc_get_price_decimals() );
+
+		// Only ever adjust upwards, and only when the gap is a real amount of
+		// money. A charge below the order total is a discrepancy to flag, not
+		// something to quietly write into the books.
+		if ( $difference <= 0 ) {
+			if ( $difference < 0 ) {
+				$order->add_order_note(
+					sprintf(
+						/* translators: %s: amount Kurv reported as charged. */
+						__( 'Kurv reported a charge of %s, which is less than the order total. Please reconcile this manually.', 'kurv-payments-for-woocommerce' ),
+						wc_price( $charged, [ 'currency' => $order->get_currency() ] )
+					)
+				);
+			}
+			return;
+		}
+
+		$label = (string) $this->get_option( 'card_fee_label', __( 'Card processing fee', 'kurv-payments-for-woocommerce' ) );
+
+		$fee = new \WC_Order_Item_Fee();
+		$fee->set_name( $label );
+		$fee->set_amount( (string) $difference );
+		$fee->set_total( (string) $difference );
+		// The fee arrives already applied by Kurv, so no tax is calculated on it.
+		$fee->set_tax_status( 'none' );
+		$fee->set_total_tax( '0' );
+
+		$order->add_item( $fee );
+
+		// Set the total explicitly from Kurv's figure rather than recalculating,
+		// so line item taxes and totals are left exactly as the customer agreed.
+		$order->set_total( (string) round( $charged, wc_get_price_decimals() ) );
+		$order->update_meta_data( '_kurv_card_fee', $difference );
+		$order->update_meta_data( '_kurv_fee_reconciled', 'yes' );
+		$order->save();
+
+		$order->add_order_note(
+			sprintf(
+				/* translators: 1: fee amount, 2: total charged. */
+				__( 'Added %1$s card fee applied by Kurv. Order total updated to %2$s to match the amount charged.', 'kurv-payments-for-woocommerce' ),
+				wc_price( $difference, [ 'currency' => $order->get_currency() ] ),
+				wc_price( $charged, [ 'currency' => $order->get_currency() ] )
+			)
+		);
+
+		$this->log( sprintf( '%s: reconciled card fee of %.2f, order total now %.2f', $source, $difference, $charged ) );
 	}
 
 	/**

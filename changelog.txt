@@ -1,3 +1,42 @@
+= 1.0.4 — 2026-08-14 =
+
+Dual pricing disclosure, and a refund safety fix.
+
+Refunds
+* Fixed: a serious hazard for merchants who refund in the Kurv portal. Marking
+  the WooCommerce order Refunded afterwards sent a second, full-value refund to
+  the API — there is no duplicate-refund guard on that endpoint, and a partial
+  refund in Kurv was followed by a full refund here. The new "Manage refunds in
+  Kurv" setting (on by default) makes the status change a record-keeping action
+  only, and hides WooCommerce's Refund button so it cannot be used by mistake.
+  Disable the setting to refund through WooCommerce as before.
+
+Dual pricing / card fee
+* Added: optional disclosure of the card fee at checkout, for merchants whose
+  Kurv account has dual pricing enabled. The customer sees the base price, the
+  card fee and the total they will actually be charged, before paying.
+  Configurable percentage and labels, so the wording can match local
+  requirements.
+* IMPORTANT: the percentage is used for display only and is never added to the
+  amount submitted to Kurv. Dual pricing is applied on Kurv's side and cannot be
+  suppressed per request, so adding it here as well would charge the fee twice.
+  The plugin deliberately does not call WC_Cart::add_fee(), because that would
+  raise the cart total and therefore the amount submitted.
+* Added: the order total is now brought up to the amount Kurv actually charged,
+  once payment succeeds. Previously an order recorded the base amount while the
+  customer was charged the base plus the fee, so every order, customer
+  confirmation email and revenue report understated the sale. The fee line is
+  built from the amount reported by Kurv, never from the configured percentage,
+  so it is exact for any percentage and any rounding rule. It runs before
+  payment_complete(), so the confirmation email shows the real total, and is
+  guarded so a callback and a browser return arriving together cannot apply it
+  twice.
+* Added: an order note if Kurv ever reports a charge lower than the order total,
+  rather than silently adjusting the books downwards.
+* Note: on the block checkout the disclosure appears in the payment method
+  description rather than as separate total rows — injecting custom rows into the
+  block totals needs a Store API extension, which is not done here.
+
 = 1.0.3 — 2026-08-14 =
 
 Production hardening.

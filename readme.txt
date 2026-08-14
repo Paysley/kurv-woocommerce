@@ -4,7 +4,7 @@ Tags: woocommerce, payment, gateway, kurv
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 1.0.3
+Stable tag: 1.0.4
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -60,6 +60,24 @@ the Kurv API after 10 minutes, 1 hour and 6 hours.
 No. The plugin sends its own callback URL with every payment request. The URL is
 shown at the top of the Kurv settings screen for reference.
 
+= My Kurv account uses dual pricing. Will the fee show at checkout? =
+Enable "Show card fee at checkout" and set the percentage to match your Kurv
+account. The customer then sees the base price, the card fee and the total they
+will be charged, before paying.
+
+The percentage is used for display only. Kurv applies dual pricing itself when
+the payment is processed, so the plugin never adds the fee to the amount it
+submits — doing both would charge the fee twice. After payment succeeds, the
+order total is updated to the amount Kurv reports as charged, so the order,
+the customer's confirmation email and your reports all match.
+
+= Can I refund from WooCommerce? =
+By default, no. "Manage refunds in Kurv" is enabled, which hides WooCommerce's
+Refund button and makes marking an order Refunded a record-keeping action only.
+This is the safe default: refunding in the Kurv portal and then updating the
+WooCommerce record would otherwise send a second refund. Turn the setting off to
+refund through WooCommerce instead.
+
 = Can I change the API host or timeout? =
 Yes, with two filters:
 
@@ -80,6 +98,11 @@ at https://kurv.com for how that data is handled.
 See changelog.txt for full version history.
 
 == Upgrade Notice ==
+= 1.0.4 =
+Important if you refund in the Kurv portal: marking an order Refunded in
+WooCommerce could previously send a second refund to Kurv. Also adds optional
+card fee disclosure at checkout for accounts using dual pricing.
+
 = 1.0.3 =
 Recommended. Cuts the API timeout so a slow response cannot hold checkout open
 for minutes, stops customer contact details being written to the debug log, and
