@@ -1,3 +1,14 @@
+= 1.0.6 — 2026-08-14 =
+
+* Changed: the amount that will actually be charged is now shown larger and in
+  bold within the card fee disclosure, so the figure the customer is agreeing to
+  stands out from the surrounding sentence. Sized in em units so it scales with
+  whatever the theme sets around it, and kept on one line so it cannot wrap
+  mid-figure.
+* Fixed: the block checkout rendered the payment method description as a plain
+  string, so any markup in it appeared as literal tags. It is now rendered as
+  HTML, which is what lets the emphasised amount work there too.
+
 = 1.0.5 — 2026-08-14 =
 
 * Fixed: the card fee disclosure could fail to appear at checkout. The totals

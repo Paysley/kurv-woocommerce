@@ -4,7 +4,7 @@ Tags: woocommerce, payment, gateway, kurv
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 1.0.5
+Stable tag: 1.0.6
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -96,6 +96,9 @@ at https://kurv.com for how that data is handled.
 See changelog.txt for full version history.
 
 == Upgrade Notice ==
+= 1.0.6 =
+Makes the amount that will be charged more prominent in the card fee disclosure.
+
 = 1.0.5 =
 Fixes the card fee disclosure not appearing at checkout on themes that override
 the checkout totals template.

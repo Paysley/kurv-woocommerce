@@ -584,7 +584,7 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 		<tr class="kurv-card-total order-total">
 			<th><?php echo esc_html( $total_label ); ?></th>
 			<td data-title="<?php echo esc_attr( $total_label ); ?>">
-				<strong><?php echo wp_kses_post( wc_price( $figures['total'] ) ); ?></strong>
+				<strong class="kurv-charge-amount"><?php echo wp_kses_post( wc_price( $figures['total'] ) ); ?></strong>
 			</td>
 		</tr>
 		<?php
@@ -610,12 +610,21 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 			return '';
 		}
 
+		// The charged amount is the figure the customer most needs to register, so
+		// it is emphasised rather than left level with the surrounding sentence.
+		// Prices are stripped of wc_price()'s own markup first, so the emphasis
+		// wraps plain text instead of nesting inside its spans.
+		$charged = sprintf(
+			'<strong class="kurv-charge-amount">%s</strong>',
+			esc_html( wp_strip_all_tags( wc_price( $figures['total'] ) ) )
+		);
+
 		return sprintf(
-			/* translators: 1: fee percentage, 2: fee amount, 3: total including the fee. */
+			/* translators: 1: fee percentage, 2: fee amount, 3: total including the fee, emphasised. */
 			__( 'A card fee of %1$s%% (%2$s) applies to card payments, so the amount charged will be %3$s.', 'kurv-payments-for-woocommerce' ),
-			wc_format_localized_decimal( $figures['percentage'] ),
-			wp_strip_all_tags( wc_price( $figures['fee'] ) ),
-			wp_strip_all_tags( wc_price( $figures['total'] ) )
+			esc_html( wc_format_localized_decimal( $figures['percentage'] ) ),
+			esc_html( wp_strip_all_tags( wc_price( $figures['fee'] ) ) ),
+			$charged
 		);
 	}
 
@@ -626,7 +635,10 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 	 * is not straightforward.
 	 */
 	public function get_description_with_card_fee(): string {
-		$description = (string) $this->description;
+		// The classic path receives an already-sanitised description from
+		// WC_Payment_Gateway::get_description(); this one reads the raw property,
+		// so it is sanitised here to match.
+		$description = wp_kses_post( (string) $this->description );
 		$notice      = $this->get_card_fee_notice();
 
 		return '' === $notice ? $description : trim( $description . ' ' . $notice );

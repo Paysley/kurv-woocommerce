@@ -216,3 +216,22 @@
     vertical-align: middle;
     display: inline-block;
 }
+
+/* ==========================================================================
+   Card fee disclosure — the amount the customer will actually be charged
+   ========================================================================== */
+
+.kurv-charge-amount {
+    font-size: 1.3em;
+    font-weight: 700;
+    /* Keep the figure on one line so it never breaks across a wrap. */
+    white-space: nowrap;
+    /* em-based so it scales with whatever the theme sets around it. */
+    line-height: 1.4;
+}
+
+/* Inside the totals table the row is already bold and sized by the theme, so
+   only the step up in scale is needed there. */
+.kurv-card-total .kurv-charge-amount {
+    font-size: 1.15em;
+}
