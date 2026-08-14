@@ -29,6 +29,19 @@ class Kurv_API {
 	private const MAX_ATTEMPTS = 3;
 
 	/**
+	 * Default HTTP timeout, in seconds.
+	 *
+	 * Deliberately modest: these calls can run on the checkout thread, where a
+	 * slow API must not hold a customer's browser open indefinitely. This was
+	 * previously 70s, which in the worst case (with retries) left a shopper
+	 * staring at a spinner for over three minutes.
+	 *
+	 * Override per-site with the kurv_api_timeout filter if a merchant's
+	 * connection genuinely needs longer.
+	 */
+	private const DEFAULT_TIMEOUT = 20;
+
+	/**
 	 * API access key (Bearer token), set from gateway settings.
 	 *
 	 * @var string
@@ -62,9 +75,49 @@ class Kurv_API {
 
 	/**
 	 * Return the active API base URL based on mode.
+	 *
+	 * Filterable so a site can be repointed at a different host without waiting
+	 * for a plugin release — which is exactly what was needed when the documented
+	 * live hostname turned out not to exist.
+	 *
+	 *     add_filter( 'kurv_api_base_url', function ( $url, $is_test ) {
+	 *         return $is_test ? $url : 'https://api.kurv.app';
+	 *     }, 10, 2 );
 	 */
 	public static function get_api_url(): string {
-		return self::$is_test_mode ? self::$api_test_url : self::$api_live_url;
+		$url = self::$is_test_mode ? self::$api_test_url : self::$api_live_url;
+
+		/**
+		 * Filters the Kurv API base URL.
+		 *
+		 * @param string $url          Base URL, no trailing slash.
+		 * @param bool   $is_test_mode Whether sandbox mode is active.
+		 */
+		$url = (string) apply_filters( 'kurv_api_base_url', $url, self::$is_test_mode );
+
+		return untrailingslashit( $url );
+	}
+
+	/**
+	 * Normalise an API result into a [ status code, decoded body ] pair.
+	 *
+	 * Callers previously reached straight into $result['response']['code'] and
+	 * $result['body']['...']. When the API returned a non-JSON body — a gateway
+	 * error page, an HTML 502, an empty response — json_decode() yielded null and
+	 * those reads emitted PHP warnings on a live checkout page.
+	 *
+	 * @param array<mixed>|\WP_Error $result Raw result from send_request().
+	 * @return array{0:int,1:array<string,mixed>} Code (0 on transport failure) and body (empty array if not an object).
+	 */
+	public static function unpack( array|\WP_Error $result ): array {
+		if ( is_wp_error( $result ) ) {
+			return [ 0, [] ];
+		}
+
+		$code = (int) ( $result['response']['code'] ?? 0 );
+		$body = is_array( $result['body'] ?? null ) ? $result['body'] : [];
+
+		return [ $code, $body ];
 	}
 
 	/**
@@ -83,10 +136,18 @@ class Kurv_API {
 	 * @return array<mixed>|\WP_Error
 	 */
 	public static function send_request( string $url, array|string $body = '', string $method = 'GET', int $attempt = 1 ): array|\WP_Error {
+		/**
+		 * Filters the HTTP timeout, in seconds, for Kurv API requests.
+		 *
+		 * @param int    $timeout Timeout in seconds.
+		 * @param string $url     Endpoint being called.
+		 */
+		$timeout = (int) apply_filters( 'kurv_api_timeout', self::DEFAULT_TIMEOUT, $url );
+
 		$api_args = [
 			'headers' => [ 'Authorization' => 'Bearer ' . self::$access_key ],
 			'method'  => strtoupper( $method ),
-			'timeout' => 70,
+			'timeout' => max( 1, $timeout ),
 		];
 
 		if ( 'POST' === $method || 'PUT' === $method ) {

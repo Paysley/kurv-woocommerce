@@ -342,6 +342,75 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 	}
 
 	/**
+	 * Fields redacted before a payload is written to the debug log.
+	 *
+	 * WooCommerce log files are plain text under wp-content/uploads and are read
+	 * by whoever is debugging a site, so customer contact and address details
+	 * must not be written into them verbatim.
+	 *
+	 * @var array<int,string>
+	 */
+	private const REDACTED_LOG_FIELDS = [
+		'email',
+		'mobile_number',
+		'mobile_no',
+		'customer_first_name',
+		'customer_last_name',
+		'first_name',
+		'last_name',
+		'company_name',
+		'address_line1',
+		'address_line2',
+		'city',
+		'state',
+		'postal_code',
+	];
+
+	/**
+	 * Recursively mask personal data in a payload destined for the log.
+	 *
+	 * Values are replaced with a type-and-length marker rather than removed, so a
+	 * log still shows whether a field was populated — which is usually the thing
+	 * being debugged.
+	 *
+	 * @param mixed $data Payload to redact.
+	 * @return mixed
+	 */
+	private function redact_for_log( mixed $data ): mixed {
+		if ( ! is_array( $data ) ) {
+			return $data;
+		}
+
+		foreach ( $data as $key => $value ) {
+			if ( is_array( $value ) ) {
+				$data[ $key ] = $this->redact_for_log( $value );
+				continue;
+			}
+
+			if ( in_array( (string) $key, self::REDACTED_LOG_FIELDS, true ) && ! in_array( $value, [ null, '' ], true ) ) {
+				$data[ $key ] = '[redacted:' . strlen( (string) $value ) . ']';
+			}
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Log a payload with personal data masked.
+	 *
+	 * @param string       $label   Log line prefix.
+	 * @param array<mixed> $payload Payload to redact and encode.
+	 * @param string       $level   PSR-3 log level.
+	 */
+	private function log_payload( string $label, array $payload, string $level = 'info' ): void {
+		if ( ! $this->enable_logging ) {
+			return;
+		}
+
+		$this->log( $label . ': ' . wp_json_encode( $this->redact_for_log( $payload ) ), $level );
+	}
+
+	/**
 	 * Push the active access key and mode to the API class.
 	 */
 	protected function init_api(): void {
@@ -508,17 +577,16 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 		$log_body                 = $body;
 		$log_body['response_url'] = add_query_arg( 'kurv_token', '*****', self::get_callback_url() );
 		$log_body['redirect_url'] = add_query_arg( 'kurv_token', '*****', $return_url );
-		$this->log( 'get_payment_url - body: ' . wp_json_encode( $log_body ) );
+		$this->log_payload( 'get_payment_url - body', $log_body );
 
 		$results = Kurv_API::generate_pos_link( $body );
-		$this->log( 'get_payment_url - results: ' . wp_json_encode( $results ) );
+		$this->log_payload( 'get_payment_url - results', (array) $results );
 
 		if ( is_wp_error( $results ) ) {
 			throw new \Exception( esc_html( $results->get_error_message() ), 1 );
 		}
 
-		$code = (int) ( $results['response']['code'] ?? 0 );
-		$data = is_array( $results['body'] ?? null ) ? $results['body'] : [];
+		[ $code, $data ] = Kurv_API::unpack( $results );
 
 		if ( 200 === $code && 'success' === ( $data['result'] ?? '' ) && ! empty( $data['long_url'] ) ) {
 			// Store the Kurv-side identifiers so the order can be reconciled later
@@ -663,16 +731,15 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 			'amount' => (float) $amount,
 		];
 
-		$this->log( 'process_refund - request body: ' . wp_json_encode( $body ) );
+		$this->log_payload( 'process_refund - request body', $body );
 		$results = Kurv_API::do_refund( $payment_id, $body );
-		$this->log( 'process_refund - results: ' . wp_json_encode( $results ) );
+		$this->log_payload( 'process_refund - results', (array) $results );
 
 		if ( is_wp_error( $results ) ) {
 			return $results;
 		}
 
-		$code = (int) ( $results['response']['code'] ?? 0 );
-		$data = is_array( $results['body'] ?? null ) ? $results['body'] : [];
+		[ $code, $data ] = Kurv_API::unpack( $results );
 
 		if ( 200 === $code && 'refund' === ( $data['status'] ?? '' ) ) {
 			$ref_number      = $data['ref_number'] ?? '';
@@ -734,9 +801,9 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 			'amount' => $amount,
 		];
 
-		$this->log( 'process_full_refund - request body: ' . wp_json_encode( $body ) );
+		$this->log_payload( 'process_full_refund - request body', $body );
 		$results = Kurv_API::do_refund( $payment_id, $body );
-		$this->log( 'process_full_refund - results: ' . wp_json_encode( $results ) );
+		$this->log_payload( 'process_full_refund - results', (array) $results );
 
 		if ( is_wp_error( $results ) ) {
 			$order->add_order_note(
@@ -750,8 +817,7 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 			return;
 		}
 
-		$code = (int) ( $results['response']['code'] ?? 0 );
-		$data = is_array( $results['body'] ?? null ) ? $results['body'] : [];
+		[ $code, $data ] = Kurv_API::unpack( $results );
 
 		if ( 200 === $code && 'refund' === ( $data['status'] ?? '' ) ) {
 			$ref_number = $data['ref_number'] ?? '';
@@ -801,13 +867,16 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 		$payment_id   = $order->get_meta( '_kurv_payment_id', true );
 		$results      = Kurv_API::get_payment( $payment_id );
 
-		$this->log( 'add_full_refund_notes - get_payment results: ' . wp_json_encode( $results ) );
+		$this->log_payload( 'add_full_refund_notes - get_payment results', (array) $results );
 
-		if ( is_wp_error( $results ) || 200 !== $results['response']['code'] ) {
+		[ $code, $data ] = Kurv_API::unpack( $results );
+
+		if ( 200 !== $code ) {
 			return;
 		}
 
-		$payment_amount = (float) ( $results['body']['payment']['amount'] ?? 0 );
+		$payment = is_array( $data['payment'] ?? null ) ? $data['payment'] : [];
+		$payment_amount = (float) ( $payment['amount'] ?? 0 );
 		if ( $payment_amount > $order_amount ) {
 			$order->add_order_note(
 				__( 'Kurv: The payment amount exceeds the order total (the customer may have added a tip or tax). Please contact Kurv support to refund the remaining amount.', 'kurv-payments-for-woocommerce' )
@@ -863,7 +932,7 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 
 		$this->log( 'process_capture_order_action - payment_id=' . $payment_id . ' amount=' . $body['amount'] );
 		$result = Kurv_API::capture_payment( $payment_id, $body );
-		$this->log( 'process_capture_order_action - result: ' . wp_json_encode( $result ) );
+		$this->log_payload( 'process_capture_order_action - result', (array) $result );
 
 		if ( is_wp_error( $result ) ) {
 			$order->add_order_note( sprintf(
@@ -874,7 +943,9 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 			return;
 		}
 
-		if ( 200 === $result['response']['code'] && 'success' === ( $result['body']['result'] ?? '' ) ) {
+		[ $code, $data ] = Kurv_API::unpack( $result );
+
+		if ( 200 === $code && 'success' === ( $data['result'] ?? '' ) ) {
 			$order_status = 'completed';
 			foreach ( $order->get_items() as $order_item ) {
 				$item = wc_get_product( $order_item->get_product_id() );
@@ -888,7 +959,7 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 			return;
 		}
 
-		$error = $result['body']['message'] ?? $result['body']['error_message'] ?? __( 'unknown error', 'kurv-payments-for-woocommerce' );
+		$error = $data['message'] ?? $data['error_message'] ?? __( 'unknown error', 'kurv-payments-for-woocommerce' );
 		$order->add_order_note( sprintf(
 			/* translators: error message from Kurv API */
 			__( 'Kurv capture failed: %s', 'kurv-payments-for-woocommerce' ),
@@ -1025,7 +1096,7 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 			return;
 		}
 
-		$this->log( $source . ' - decoded response: ' . wp_json_encode( $response ) );
+		$this->log_payload( $source . ' - decoded response', $response );
 
 		if ( $order->is_paid() || 'on-hold' === $order->get_status() ) {
 			$this->log( $source . ': order ' . $order_id . ' already settled — ignoring duplicate result' );
@@ -1169,7 +1240,7 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 			return;
 		}
 
-		$this->log( 'reconcile_order - results: ' . wp_json_encode( $results ) );
+		$this->log_payload( 'reconcile_order - results', (array) $results );
 
 		$body       = is_array( $results['body'] ?? null ) ? $results['body'] : [];
 		$confirmed  = $this->extract_confirmed_payment_id( $body );
@@ -1299,9 +1370,10 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 			$data['id'] = $kurv_product_id;
 			Kurv_API::update_product( $data );
 		} else {
-			$result = Kurv_API::create_product( $data );
-			if ( ! is_wp_error( $result ) && 200 === $result['response']['code'] && 'success' === $result['body']['result'] ) {
-				update_post_meta( $product_id, 'kurv_product_id', $result['body']['id'] );
+			[ $code, $body ] = Kurv_API::unpack( Kurv_API::create_product( $data ) );
+
+			if ( 200 === $code && 'success' === ( $body['result'] ?? '' ) && ! empty( $body['id'] ) ) {
+				update_post_meta( $product_id, 'kurv_product_id', $body['id'] );
 			}
 		}
 	}
@@ -1318,18 +1390,21 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 		$product_categories = wp_get_post_terms( $product_id, 'product_cat' );
 		$category_name      = count( $product_categories ) ? $product_categories[0]->name : __( 'Uncategorised', 'kurv-payments-for-woocommerce' );
 
-		$result = Kurv_API::category_list( $category_name );
-		if ( is_wp_error( $result ) || 200 !== $result['response']['code'] || 'success' !== $result['body']['result'] ) {
+		[ $code, $body ] = Kurv_API::unpack( Kurv_API::category_list( $category_name ) );
+
+		if ( 200 !== $code || 'success' !== ( $body['result'] ?? '' ) ) {
 			return null;
 		}
 
-		if ( ! empty( $result['body']['categories'] ) ) {
-			return (string) $result['body']['categories'][0]['id'];
+		$existing = $body['categories'][0]['id'] ?? null;
+		if ( ! empty( $existing ) ) {
+			return (string) $existing;
 		}
 
-		$create = Kurv_API::create_category( [ 'name' => $category_name ] );
-		if ( ! is_wp_error( $create ) && 200 === $create['response']['code'] ) {
-			return (string) $create['body']['id'];
+		[ $create_code, $create_body ] = Kurv_API::unpack( Kurv_API::create_category( [ 'name' => $category_name ] ) );
+
+		if ( 200 === $create_code && ! empty( $create_body['id'] ) ) {
+			return (string) $create_body['id'];
 		}
 
 		return null;
@@ -1344,9 +1419,9 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 	public static function update_customer_on_kurv( \WC_Order $order ): ?string {
 		self::ensure_api_credentials();
 
-		$check = Kurv_API::customers( $order->get_billing_email() );
+		[ $code, $body ] = Kurv_API::unpack( Kurv_API::customers( $order->get_billing_email() ) );
 
-		if ( is_wp_error( $check ) || 200 !== $check['response']['code'] || 'success' !== $check['body']['result'] ) {
+		if ( 200 !== $code || 'success' !== ( $body['result'] ?? '' ) ) {
 			return null;
 		}
 
@@ -1372,17 +1447,19 @@ class Kurv_Payments_Gateway extends WC_Payment_Gateway {
 			'country_iso'   => $order->get_billing_country(),
 		];
 
-		if ( ! empty( $check['body']['customers'] ) ) {
-			$customer    = $check['body']['customers'][0];
-			$customer_id = (string) $customer['customer_id'];
+		$existing_id = $body['customers'][0]['customer_id'] ?? null;
+
+		if ( ! empty( $existing_id ) ) {
+			$customer_id = (string) $existing_id;
 			// customer_id goes in the URL path, not the body — per Kurv API: PUT /customers/{customer_id}
 			Kurv_API::update_customer( $customer_id, $customer_data );
 			return $customer_id;
 		}
 
-		$create = Kurv_API::create_customer( $customer_data );
-		if ( ! is_wp_error( $create ) && 200 === $create['response']['code'] && 'success' === $create['body']['result'] ) {
-			return (string) ( $create['body']['customer_id'] ?? '' );
+		[ $create_code, $create_body ] = Kurv_API::unpack( Kurv_API::create_customer( $customer_data ) );
+
+		if ( 200 === $create_code && 'success' === ( $create_body['result'] ?? '' ) ) {
+			return (string) ( $create_body['customer_id'] ?? '' );
 		}
 
 		return null;

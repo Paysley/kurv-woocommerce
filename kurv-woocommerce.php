@@ -6,7 +6,7 @@ declare(strict_types=1);
  * Plugin Name:          Kurv Payments for WooCommerce
  * Plugin URI:           https://github.com/Paysley/kurv-woocommerce
  * Description:          Accept payments through Kurv.
- * Version:              1.0.2
+ * Version:              1.0.3
  * Author:               Kurv
  * Author URI:           https://kurv.com
  * License:              GPL v3 or later
@@ -26,7 +26,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'KURV_PLUGIN_VERSION', '1.0.2' );
+define( 'KURV_PLUGIN_VERSION', '1.0.3' );
 define( 'KURV_PLUGIN_FILE', __FILE__ );
 
 register_activation_hook( __FILE__, 'kurv_activate_plugin' );

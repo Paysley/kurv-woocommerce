@@ -4,7 +4,7 @@ Tags: woocommerce, payment, gateway, kurv
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 1.0.2
+Stable tag: 1.0.3
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -60,6 +60,16 @@ the Kurv API after 10 minutes, 1 hour and 6 hours.
 No. The plugin sends its own callback URL with every payment request. The URL is
 shown at the top of the Kurv settings screen for reference.
 
+= Can I change the API host or timeout? =
+Yes, with two filters:
+
+`kurv_api_base_url` — receives the base URL and whether sandbox mode is active.
+Use it to point a store at a different Kurv host without editing the plugin.
+
+`kurv_api_timeout` — receives the timeout in seconds (20 by default) and the
+endpoint being called. Raise it only if a server genuinely needs longer; these
+calls can run while a customer waits at checkout.
+
 = Which data is sent to Kurv? =
 Kurv is the payment processor for your store, so completing a purchase sends the
 order total and currency, the billing name, email address, phone number and
@@ -70,6 +80,11 @@ at https://kurv.com for how that data is handled.
 See changelog.txt for full version history.
 
 == Upgrade Notice ==
+= 1.0.3 =
+Recommended. Cuts the API timeout so a slow response cannot hold checkout open
+for minutes, stops customer contact details being written to the debug log, and
+hardens handling of unexpected API responses.
+
 = 1.0.2 =
 Required for live payments. The live API hostname was wrong, so checkout failed
 for every store using a live API key. Test/sandbox mode was unaffected.

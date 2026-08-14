@@ -1,3 +1,31 @@
+= 1.0.3 — 2026-08-14 =
+
+Production hardening.
+
+* Changed: the API timeout is cut from 70 seconds to 20. These calls can run on
+  the checkout thread, so in the worst case — timeout plus two rate-limit
+  retries — a customer could previously sit on a spinner for over three minutes.
+  Override with the new kurv_api_timeout filter if a site needs longer.
+* Added: kurv_api_base_url filter, so a store can be repointed at a different
+  API host without waiting for a plugin release. Prompted by the live hostname
+  fixed in 1.0.2: with this in place, that outage would have been a one-line
+  snippet rather than a release.
+* Fixed: 12 places read $result['response']['code'] and $result['body'][...]
+  directly. When the API returned anything that is not a JSON object — an HTML
+  error page, a 502 from a proxy, an empty body — json_decode() produced null
+  and those reads emitted PHP warnings, on the checkout page in some paths. All
+  API responses now go through Kurv_API::unpack(), which always yields an int
+  status code and an array body.
+* Fixed: customer personal data is no longer written to the debug log. Payment
+  and customer payloads had been logged verbatim, putting email addresses, phone
+  numbers and billing addresses into plain-text files under wp-content/uploads.
+  Those fields are now masked as [redacted:N], preserving whether a field was
+  populated without disclosing the value.
+* Changed: the logo asset drops from 535 KB to 70 KB. It embedded a 1344x1132
+  PNG that renders at 104 px at most; the raster is now 320 px. Rendering is
+  unchanged. The embedded image is only a background gradient, so a proper
+  vector export would take this to a couple of KB — worth doing separately.
+
 = 1.0.2 — 2026-08-13 =
 
 * Fixed: the live API base URL was https://live.kurv.app, a hostname with no DNS
